@@ -37,6 +37,89 @@
 
 <!-- ═══════════════════════ UNIT 3 — THE BUILD ═══════════════════════ -->
 
+## Milestone 1: Reading the Data and Running the Starter
+
+### Listing fields
+
+`data/listings.json` holds **40 listings**. Each one has these fields (from
+`python app.py fields` and `python app.py listings --full -n 6`):
+
+| Field | Type | Example | Notes |
+|---|---|---|---|
+| `id` | str | `lst_001` | Unique ID |
+| `title` | str | `Vintage Levi's 501 Jeans — Medium Wash` | Best text to match a query against |
+| `description` | str | `Classic 501s in a perfect medium wash...` | Longer text; mentions fit and flaws |
+| `category` | str | `bottoms` | One of tops (15), bottoms (10), outerwear (8), shoes (4), accessories (3) |
+| `style_tags` | list[str] | `['vintage', 'classic', 'denim', 'streetwear']` | Good for matching words like "vintage" or "graphic tee" |
+| `size` | str | `W30 L30` | **Not standardized**: `M`, `S/M`, `XL (oversized)`, `W28`, `US 8`, `One Size` |
+| `condition` | str | `good` | One of excellent, good, fair |
+| `price` | float | `38.0` | Ranges $12–$75 |
+| `colors` | list[str] | `['blue', 'indigo']` | |
+| `brand` | str or **null** | `Levi's` | 32 of 40 listings have `null` here |
+| `platform` | str | `depop` | One of depop, thredUp, poshmark |
+
+**What `search_listings` can filter on:** `price` (a number, so `max_price`
+is an easy `<=` check), `size` (string matching, but it has to handle `S/M`
+matching a request for `M`), and the free-text fields `title`, `description`,
+and `style_tags` for the description words.
+
+**Things that could break the tools later:**
+- `brand` is usually `null`, so `create_fit_card` can't assume there's a brand.
+- Sizes are messy: tops use letters, bottoms use waist sizes, shoes use `US`
+  numbers. An exact `==` match on size would miss `S/M` when someone asks for `M`.
+- Some descriptions say the size runs different from the tag (e.g. lst_002:
+  "Tag says medium but fits like a small").
+
+### Wardrobe shape
+
+From `python app.py fields` and `data/wardrobe_schema.json`, a wardrobe is a
+dict with an `items` list. Each item has:
+
+| Field | Type | Example |
+|---|---|---|
+| `id` | str | `w_001` |
+| `name` | str | `Baggy straight-leg jeans, dark wash` |
+| `category` | str | `bottoms` (tops, bottoms, outerwear, shoes, accessories) |
+| `colors` | list[str] | `['dark blue', 'indigo']` |
+| `style_tags` | list[str] | `['denim', 'streetwear', 'baggy']` |
+| `notes` | str or null | `High-waisted, sits above the hip` |
+
+**An empty wardrobe** looks like this:
+
+```json
+{ "items": [] }
+```
+
+`suggest_outfit` has to handle that case — it still gets an item, but there's
+nothing to pair it with, so it should suggest general styling instead of crashing.
+
+### Running the starter
+
+```
+$ python app.py ask 'vintage graphic tee under $30'
+[1] parse_query
+      in:  vintage graphic tee under $30
+      out: dict with keys: description, size, max_price
+[2] search_listings (via MCP)
+      in:  dict with keys: description, size, max_price
+      out: [] (empty)
+      →    0 match(es)
+[3] branch
+      →    search returned []: stopping before suggest_outfit
+
+  Nothing in the listings matched description 'vintage graphic tee', under $30.
+Things to change: try broader words — 'jacket' finds more than 'cropped corduroy jacket'; raise the price ceiling above $30.
+
+0 model calls this session
+```
+
+The starter runs. `search_listings` is still a stub, so it returns `[]` and
+the loop stops before `suggest_outfit`, which is expected at this point.
+
+**Three fields from memory:** `price`, `size`, `style_tags`.
+
+---
+
 ## What This Does
 
 <!-- Three or four sentences: what a user asks for, and what they get back. -->
