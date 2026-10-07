@@ -25,10 +25,7 @@ Given a query that matches at least one listing, the agent completes all three
 tool calls and returns a fit card — in at least 4 of 5 tries.
 
 **Why this target:**
-<!-- Why 4 of 5 and not 5 of 5? Something about your search, probably —
-     "my search is a plain keyword match and some phrasings will miss" is a
-     real answer. -->
-
+My search depends on matching words in the listing data, so some reasonable phrasings may not find a match. That is why I chose 4 of 5 instead of 5 of 5.
 ---
 
 ## 2. An impossible query stops before the second tool
@@ -37,66 +34,41 @@ Given a query that matches no listings, the agent stops before calling
 `suggest_outfit` and returns a message naming what to change — 5 of 5 tries.
 
 **Why this target:**
-<!-- Why is 5 of 5 reasonable here when criterion 1 isn't? What's different
-     about this path? -->
+This path is controlled by a simple rule in the agent. When the search returns an empty list, it should always stop before calling suggest_outfit, so 5 of 5 is expected.
 
 ---
 
 ## 3. Something about state
 
-<!-- YOU WRITE THIS ONE.
-
-     How would you know that the item your search found is the same item the
-     next tool received? Name something countable or observable.
-
-     This is the criterion people find hardest, because state failure doesn't
-     look like state failure — it looks like a tool problem. Something that
-     compares session["selected_item"] against what actually reached
-     suggest_outfit is the shape you're after. -->
-
+After a successful search, the id of the item given to suggest_outfit matches the id of session["selected_item"] in 5 of 5 tries.
 
 
 **Why this target:**
-
+The selected item is saved in the session before suggest_outfit runs, so the same item should be passed to the next tool every time. A mismatch would mean the agent changed the item between steps.
 
 
 ---
 
-## 4. Something about the fit card
+## 4. The fit card uses the real listing facts
 
-<!-- YOU WRITE THIS ONE.
-
-     The fit card calls a model, so the same input can produce different words
-     each time. That's not a bug — it's the nature of the tool. So what would
-     make it acceptable?
-
-     Think about what you'd actually be unhappy to see. A caption that never
-     mentions the price? Two different items producing the same opening
-     sentence? A card longer than a caption anyone would post? Any of those can
-     be turned into a number. -->
-
-
+For 5 different listings, including at least 2 where `brand` is `None`, each
+fit card is 2–4 sentences, states that listing's exact price and platform, and
+never shows the word "None" or names a brand the listing doesn't have — in at
+least 4 of 5 cards.
 
 **Why this target:**
-
-
+The caption comes from the model, so it can sometimes drop the price or make up a brand, and 32 of the 40 listings have no brand at all. I allowed one miss out of 5 because the wording changes every run, but more than one would mean my prompt isn't giving the model the right facts.
 
 ---
 
-## 5. Your choice
+## 5. An empty wardrobe still gets a full run
 
-<!-- YOU WRITE THIS ONE TOO.
-
-     Pick something you actually care about getting right. Speed, the empty
-     wardrobe path, what happens when the model can't be reached, whether the
-     search respects a price ceiling — anything, as long as it names a number
-     or an observable outcome. -->
-
-
+Given a matching query and `get_empty_wardrobe()`, the agent finishes with a
+non-empty outfit suggestion and a fit card, and the suggestion doesn't name any
+item from the example wardrobe (like "Chunky white sneakers") — 5 of 5 tries.
 
 **Why this target:**
-
-
+An empty wardrobe is a normal case for a new user, and `suggest_outfit` is supposed to fall back to general styling advice instead of returning nothing. Naming a piece the user doesn't own would mean the tool is making things up, so I expect this every time.
 
 ---
 
