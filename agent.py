@@ -5,6 +5,10 @@ import trace
 from tools import search_listings, suggest_outfit, create_fit_card
 from generate import ModelUnavailable
 
+# Extra credit: fourth tool and style memory.
+from tools import compare_price
+from utils.style_memory import load_wardrobe, save_wardrobe
+
 
 # ── session state ─────────────────────────────────────────────────────────────
 
@@ -29,6 +33,10 @@ def new_session(query: str, wardrobe: dict) -> dict:
         "outfit_suggestion": None,   # what suggest_outfit returned
         "fit_card": None,            # what create_fit_card returned
         "error": None,               # set when the run ended early
+        # extra credit
+        "price_check": None,         # what compare_price returned for selected_item
+        "cheaper_alternative": None, # set by the price branch when one exists
+        "wardrobe_from_memory": False, # True when an empty wardrobe was swapped for the saved one
     }
 
 
@@ -189,6 +197,60 @@ def run_agent(query: str, wardrobe: dict) -> dict:
         session["selected_item"] = session["search_results"][0]
         trace.step("select_item", returned=session["selected_item"])
 
+        # ── EXTRA CREDIT: SECOND BRANCH (price check) ─────────────────────────
+        # If the selected item is priced above typical for its category, look
+        # for a cheaper listing in the same category among the search results.
+        # selected_item does not change either way.
+        steps += 1
+        trace.check_iterations(steps)
+        session["price_check"] = compare_price(session["selected_item"])
+        trace.step(
+            "compare_price",
+            inputs=session["selected_item"],
+            returned=session["price_check"],
+            note=session["price_check"]["verdict"],
+        )
+        if session["price_check"]["verdict"] == "above typical":
+            cheaper = [
+                listing
+                for listing in session["search_results"][1:]
+                if listing["category"] == session["selected_item"]["category"]
+                and listing["price"] < session["selected_item"]["price"]
+            ]
+            if cheaper:
+                session["cheaper_alternative"] = min(cheaper, key=lambda l: l["price"])
+            trace.step(
+                "branch",
+                returned=session["cheaper_alternative"],
+                note="above typical: looked for a cheaper result in the same category",
+            )
+        else:
+            trace.step("branch", note="price is fine: no alternative needed")
+
+        # ── EXTRA CREDIT: style memory (wardrobe) ─────────────────────────────
+        # A wardrobe with items is saved for later runs. An empty one is
+        # replaced by the saved wardrobe, if there is one.
+        if config.STYLE_MEMORY_ENABLED:
+            if (session["wardrobe"] or {}).get("items"):
+                save_wardrobe(session["wardrobe"])
+                trace.step(
+                    "save wardrobe",
+                    note=f"{len(session['wardrobe']['items'])} item(s) remembered",
+                )
+            else:
+                remembered = load_wardrobe()
+                if remembered:
+                    session["wardrobe"] = remembered
+                    session["wardrobe_from_memory"] = True
+                trace.step(
+                    "load wardrobe",
+                    note=(
+                        f"{len(remembered['items'])} remembered item(s)"
+                        if remembered
+                        else "nothing saved yet"
+                    ),
+                )
+
         steps += 1
         trace.check_iterations(steps)
         session["outfit_suggestion"] = suggest_outfit(
@@ -263,6 +325,11 @@ def _show(session: dict) -> None:
     print(f"  found:    {item.get('title')} — ${item.get('price')} on {item.get('platform')}")
     print(f"  outfit:   {session['outfit_suggestion']}")
     print(f"  fit card: {session['fit_card']}")
+    # extra credit
+    print(f"  price:    {(session['price_check'] or {}).get('verdict')}")
+    if session["cheaper_alternative"]:
+        alt = session["cheaper_alternative"]
+        print(f"  cheaper:  {alt['title']} — ${alt['price']} on {alt['platform']}")
 
 
 if __name__ == "__main__":

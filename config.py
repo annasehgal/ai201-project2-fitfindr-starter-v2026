@@ -61,6 +61,11 @@ MAX_ITERATIONS = 10
 # How many search results to consider. The agent uses the first one.
 SEARCH_RESULT_LIMIT = 10
 
+# Extra credit — style memory. Off by default so evaluation runs aren't
+# affected by what earlier runs picked. Turn on with AI201_MEMORY=1.
+STYLE_MEMORY_ENABLED = os.getenv("AI201_MEMORY", "0") == "1"
+STYLE_MEMORY_PATH = ROOT / "style_memory.json"
+
 
 # ─── Model ───────────────────────────────────────────────────────────────────
 

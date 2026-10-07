@@ -15,6 +15,9 @@ env/
 # Cached model responses
 .cache/
 
+# Style memory (extra credit) — personal, rebuilt by running the agent
+style_memory.json
+
 # OS noise
 .DS_Store
 Thumbs.db

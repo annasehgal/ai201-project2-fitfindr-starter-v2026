@@ -231,6 +231,11 @@ Otherwise, take the first result (the best match), store it in
 `if not session["search_results"]:` check. The "nothing found" message is
 built in `agent.py::_nothing_found_message`.
 
+**Second branch (extra credit):** after selecting the item, `run_agent` checks
+its price with `compare_price`. If it's above typical for its category, it
+looks for a cheaper same-category listing in the search results. See
+[Extra Credit](#extra-credit).
+
 **How the query is parsed:** With regex, in `agent.py::parse_query`. No model
 call is made. In order:
 1. **Price:** `_PRICE_RE` finds a dollar amount, optionally after "under",
@@ -258,7 +263,9 @@ session dict per run, and `run_agent` fills it in this order:
    `suggest_outfit` on its own, so the user never types it again.**
 5. `outfit_suggestion`: the string from
    `suggest_outfit(session["selected_item"], session["wardrobe"])`, where
-   `wardrobe` was put in the session at the start of the run.
+   `wardrobe` was put in the session at the start of the run. (Extra credit:
+   with style memory on, an empty `session["wardrobe"]` is replaced by the
+   saved one first. See [Extra Credit](#extra-credit).)
 6. `fit_card`: the string from
    `create_fit_card(session["outfit_suggestion"], session["selected_item"])`.
 
@@ -346,6 +353,66 @@ Nothing beats a broken-in pair of Vintage Levi's 501 Jeans — Medium Wash for t
   query, and checked the output: the matching one reached all three tools with
   the same item in `selected_item` and in `suggest_outfit`, and the impossible
   one stopped after the search with `fit_card` still `None`.
+
+---
+
+## Extra Credit
+
+All three optional features are built and tested from the terminal. None of
+them change `search_listings`, `create_fit_card`, the empty-search branch, or
+which item is selected.
+
+**1. Fourth tool: `compare_price(item)`** (`tools.py`). It compares a listing's
+price with the median price of the *other* listings in its category, with no
+model call. It returns `category`, `price`, `typical_price`, `compared_with`
+and a `verdict`: `"above typical"` / `"below typical"` (more than 10% off the
+median) or `"about typical"`. If no other listing shares the category, it
+returns `typical_price: None` and `"no comparison"` instead of raising. I chose
+this because the data has a clear price spread by category (median tops $21,
+bottoms $30, outerwear $41, shoes $46).
+
+```
+$ python -c "from tools import compare_price; from utils.data_loader import load_listings; L = {l['id']: l for l in load_listings()}; print(compare_price(L['lst_022']))"
+{'category': 'outerwear', 'price': 75.0, 'typical_price': 40.0, 'compared_with': 7, 'verdict': 'above typical'}
+```
+
+**2. Second branch: price check** (`agent.py::run_agent`, after `select_item`).
+`run_agent` calls `compare_price(session["selected_item"])` and stores the
+result in `session["price_check"]`.
+- **If the verdict is `"above typical"`:** look through the rest of
+  `session["search_results"]` for listings in the same category that cost less,
+  and put the cheapest one in `session["cheaper_alternative"]`.
+- **Otherwise:** no extra step, and `cheaper_alternative` stays `None`.
+
+Either way, `selected_item` is still `search_results[0]` and the run goes on to
+`suggest_outfit`. Tested both sides: `'leather jacket'` picks the $75 bomber
+(above typical) and sets `cheaper_alternative` to the $33 Olive Canvas Shacket.
+`'graphic tee under $30'` picks the $18 baby tee (below typical) and leaves it
+`None`. An empty search still stops before this step.
+
+**3. Style memory: the agent remembers a wardrobe between runs**
+(`utils/style_memory.py`). It's off by default and turned on with
+`AI201_MEMORY=1`, so evaluation runs (including the empty-wardrobe scenario)
+aren't affected by earlier runs. When it's on, `run_agent` checks the wardrobe
+just before `suggest_outfit`:
+- **Wardrobe has items:** save it to `style_memory.json` in the project root.
+- **Wardrobe is empty:** load the saved wardrobe into `session["wardrobe"]`
+  and set `session["wardrobe_from_memory"]` to `True`. If nothing is saved
+  yet, the run carries on with the empty wardrobe as before.
+
+`suggest_outfit` is unchanged and still takes `(new_item, wardrobe)`. It just
+receives the remembered wardrobe. The file is gitignored; delete it to forget.
+
+Tested with two separate processes:
+- **Run 1** (`AI201_MEMORY=1`, example wardrobe, `'graphic tee under $30'`):
+  trace shows `save wardrobe → 10 item(s) remembered`, and `style_memory.json`
+  holds all 10 items.
+- **Run 2** (`AI201_MEMORY=1`, *empty* wardrobe, `'leather jacket'`, cache
+  off): trace shows `load wardrobe → 10 remembered item(s)`, and the outfit
+  named saved pieces, including the white ribbed tank top, baggy straight-leg
+  jeans and black combat boots.
+- **With memory off,** an empty wardrobe stays empty and the file is neither
+  read nor written.
 
 <!-- ═══════════════════════ UNIT 4 — THE TEST ═══════════════════════
 

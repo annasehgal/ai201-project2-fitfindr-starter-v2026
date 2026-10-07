@@ -21,6 +21,7 @@ the description has to say what is *in* the list.
 """
 
 import re
+import statistics
 
 import config
 from generate import generate
@@ -288,3 +289,61 @@ def create_fit_card(outfit: str, new_item: dict) -> str:
         "- Return only the caption, no preamble or options."
     )
     return generate(prompt)
+
+
+# ── Tool 4 (extra credit): compare_price ─────────────────────────────────────
+
+def compare_price(item: dict) -> dict:
+    """
+    Compare a listing's price with the other listings in the same category.
+
+    No model call — like search_listings, it only reads the listings data.
+
+    Args:
+        item: a listing dict (e.g. session["selected_item"]).
+
+    Returns:
+        A dict with:
+            category      (str)          the item's category
+            price         (float)        the item's price
+            typical_price (float/None)   median price of the *other* listings
+                                         in that category
+            compared_with (int)          how many listings that median uses
+            verdict       (str)          "below typical", "about typical",
+                                         "above typical", or "no comparison"
+
+        "About typical" means within 10% of the median either way. When no
+        other listing shares the category, typical_price is None and the
+        verdict is "no comparison" — never an exception.
+    """
+    others = [
+        listing["price"]
+        for listing in load_listings()
+        if listing["category"] == item.get("category") and listing["id"] != item.get("id")
+    ]
+    price = item.get("price")
+
+    if not others or price is None:
+        return {
+            "category": item.get("category"),
+            "price": price,
+            "typical_price": None,
+            "compared_with": len(others),
+            "verdict": "no comparison",
+        }
+
+    typical = statistics.median(others)
+    if price > typical * 1.1:
+        verdict = "above typical"
+    elif price < typical * 0.9:
+        verdict = "below typical"
+    else:
+        verdict = "about typical"
+
+    return {
+        "category": item.get("category"),
+        "price": price,
+        "typical_price": typical,
+        "compared_with": len(others),
+        "verdict": verdict,
+    }
