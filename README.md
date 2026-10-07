@@ -124,7 +124,15 @@ the loop stops before `suggest_outfit`, which is expected at this point.
 
 <!-- Three or four sentences: what a user asks for, and what they get back. -->
 
-
+FitFindr takes a plain-language request like "graphic tee under $30, size M"
+and pulls out a description, a size and a price ceiling. `search_listings`
+filters the thrift listings by size and price and ranks what's left by how many
+keywords match. If something matches, the top listing goes to `suggest_outfit`,
+which suggests one or two outfits using pieces from the user's wardrobe (or
+general styling ideas if the wardrobe is empty), and then `create_fit_card`
+writes a short caption with the item's title, price and platform. If nothing
+matches, the agent stops before either of those steps and tells the user what
+to change: broader words, a different size, or a higher price.
 
 ---
 
@@ -219,8 +227,9 @@ return the session without calling `suggest_outfit` or `create_fit_card`.
 Otherwise, take the first result (the best match), store it in
 `session["selected_item"]`, and go on to `suggest_outfit`.
 
-**Where it lives:** `agent.py::run_agent` (the `if not results:` check). The
-"nothing found" message is built in `agent.py::_nothing_found_message`.
+**Where it lives:** `agent.py::run_agent`, in the
+`if not session["search_results"]:` check. The "nothing found" message is
+built in `agent.py::_nothing_found_message`.
 
 **How the query is parsed:** With regex, in `agent.py::parse_query`. No model
 call is made. In order:
@@ -311,15 +320,32 @@ Nothing beats a broken-in pair of Vintage Levi's 501 Jeans — Medium Wash for t
 
 **Moment 1**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* I asked Claude to implement `search_listings()` from the
+  existing contract in `tools.py`, using `load_listings()` and my own
+  stopword and size helpers.
+- *What came back:* An implementation that filters by price and size, scores
+  by keyword overlap and caps results at `SEARCH_RESULT_LIMIT`. It also pointed
+  out two bugs in my helpers: `re` was never imported, and `_size_tokens` used
+  `.upper` without the `()`.
+- *What I changed:* I tested it from the terminal with a normal search
+  (`'graphic tee', max_price=30`), with a size filter (`size='L'`) and with a
+  nonsense query to check that the empty case returns `[]`.
 
 **Moment 2**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* I asked Claude to wire the Unit 3 loop in `run_agent()`
+  so that every tool reads its input back out of the session, while keeping
+  the professor's Unit 4 MCP code (`_search()`).
+- *What came back:* Its first pass treated the older stub in my last commit as
+  the professor's original and restored docstring text from it, which wasn't
+  in the version my professor gave me.
+- *What I changed:* I gave it the professor's original `agent.py` and asked
+  for the replaced lines (`results = _search(parsed)` and the lines that used
+  `results`) to be kept as comments next to the Unit 3 code instead of
+  deleted. I then asked Claude to run a matching query and an impossible
+  query, and checked the output: the matching one reached all three tools with
+  the same item in `selected_item` and in `suggest_outfit`, and the impossible
+  one stopped after the search with `fit_card` still `None`.
 
 <!-- ═══════════════════════ UNIT 4 — THE TEST ═══════════════════════
 
