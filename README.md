@@ -142,24 +142,60 @@ the loop stops before `suggest_outfit`, which is expected at this point.
 
 ### `search_listings`
 
-- **What it does:**
-- **Inputs:** <!-- name and type each: `max_price` (float), not "a price" -->
-- **Returns:**
-- **When it has nothing:**
+- **What it does:** Searches `data/listings.json` for listings whose words
+  match the description, keeps only those that fit the size and price filters
+  (when given), and returns them best match first.
+- **Inputs:**
+  - `description` (str): keywords for what the user wants, e.g. `"vintage graphic tee"`.
+  - `size` (str or None): size to filter by, case-insensitive; `None` skips the
+    size filter. A size matches when it equals one of the listing's
+    slash-separated size parts after parentheticals are removed (`"M"` matches
+    `"S/M"` and `"M/L"`, but not `"XL"` or `"US 9"`). Listings marked
+    `One Size` match any size.
+  - `max_price` (float or None): price ceiling, inclusive (`price <= max_price`);
+    `None` skips the price filter.
+- **Returns:** `list[dict]`: up to `config.SEARCH_RESULT_LIMIT` (10) listing
+  dicts, sorted by keyword-overlap score, highest first. Listings that share
+  no keywords with `description` are left out. Each dict is a full listing with
+  `id` (str), `title` (str), `description` (str), `category` (str),
+  `style_tags` (list[str]), `size` (str), `condition` (str), `price` (float),
+  `colors` (list[str]), `brand` (str or None, usually None), `platform` (str).
+- **When it has nothing:** Returns an empty list `[]`, never `None` and never
+  an exception. The planning loop branches on this.
 
 ### `suggest_outfit`
 
-- **What it does:**
+- **What it does:** Uses the model to suggest one or two outfits built around
+  the new item, using pieces from the user's wardrobe.
 - **Inputs:**
-- **Returns:**
-- **When it has nothing:**
+  - `new_item` (dict): one listing dict (same fields as above), the item the
+    user is considering.
+  - `wardrobe` (dict): a wardrobe dict with an `items` key holding a list of
+    wardrobe item dicts (`id`, `name`, `category`, `colors`, `style_tags`,
+    `notes`). The list may be empty.
+- **Returns:** `str`: a non-empty string of outfit suggestions. When the
+  wardrobe has items, the suggestions name specific pieces the user already
+  owns by their `name`.
+- **When it has nothing:** If `wardrobe["items"]` is empty, it still returns a
+  non-empty string of general styling advice for the item (what kinds of
+  pieces it goes with). It never returns `""` and never raises because the
+  wardrobe is empty.
 
 ### `create_fit_card`
 
-- **What it does:**
+- **What it does:** Uses the model to write a short social-media caption about
+  the find, in the voice of a real post rather than a product description.
 - **Inputs:**
-- **Returns:**
-- **When it has nothing:**
+  - `outfit` (str): the outfit suggestion string returned by `suggest_outfit`.
+  - `new_item` (dict): the listing dict for the item.
+- **Returns:** `str`: a caption of 2–4 sentences. It mentions the item, its
+  `price`, and its `platform` once each, and is specific about the vibe. It
+  does not assume `brand` is set. Because the model runs at temperature 0.9,
+  repeated calls on the same input should not give word-for-word identical
+  captions (unless the cache in `config.py` is on).
+- **When it has nothing:** If `outfit` is empty or only whitespace, it does not
+  call the model and does not raise. It returns a descriptive message string
+  saying no outfit was given, so no caption could be written.
 
 ---
 
@@ -176,13 +212,50 @@ the loop stops before `suggest_outfit`, which is expected at this point.
      The grader checks your code against what you claim here, so the file and
      function have to be real. -->
 
-**Branch rule:**
+**Branch rule:** If `search_listings` returns an empty list, put a message in
+`session["error"]` that names what was searched for and what the user could
+change (broader words, drop or change the size, raise the price ceiling), then
+return the session without calling `suggest_outfit` or `create_fit_card`.
+Otherwise, take the first result (the best match), store it in
+`session["selected_item"]`, and go on to `suggest_outfit`.
 
-**Where it lives:** `agent.py::run_agent`
+**Where it lives:** `agent.py::run_agent` (the `if not results:` check). The
+"nothing found" message is built in `agent.py::_nothing_found_message`.
 
-**How the query is parsed:** <!-- regex, string splitting, or asking the model — say which -->
+**How the query is parsed:** With regex, in `agent.py::parse_query`. No model
+call is made. In order:
+1. **Price:** `_PRICE_RE` finds a dollar amount, optionally after "under",
+   "below", "less than", "max" or "up to" (e.g. `under $30` → `30.0`). The
+   match is cut out of the text.
+2. **Size:** `_SIZE_RE` finds `size <X>`, where X is XXS–XXL, `US <n>` or
+   `W<n>`. If that finds nothing, `_BARE_SIZE_RE` looks for a bare letter size
+   at the end after a comma (e.g. `..., M`). The size is uppercased and cut out
+   of the text.
+3. **Description:** whatever text is left, with commas and extra spaces cleaned up.
 
-**What moves through the session:** <!-- which fields, in what order -->
+It returns `{"description": str, "size": str or None, "max_price": float or None}`.
+Known limit: phrasing the regex doesn't know, like "nothing over thirty
+dollars", gives `max_price = None`, so the price ceiling is ignored without
+any warning.
+
+**What moves through the session:** `agent.py::new_session` creates one
+session dict per run, and `run_agent` fills it in this order:
+1. `query`: the raw text the user typed.
+2. `parsed`: the `parse_query` output (`description`, `size`, `max_price`).
+3. `search_results`: `run_agent` calls
+   `search_listings(description, size, max_price)` with the three `parsed`
+   values, and the returned list is stored in `session["search_results"]`.
+4. `selected_item`: `search_results[0]`. **This is the item that reaches
+   `suggest_outfit` on its own, so the user never types it again.**
+5. `outfit_suggestion`: the string from
+   `suggest_outfit(session["selected_item"], session["wardrobe"])`, where
+   `wardrobe` was put in the session at the start of the run.
+6. `fit_card`: the string from
+   `create_fit_card(session["outfit_suggestion"], session["selected_item"])`.
+
+`error` stays `None` on a full run. On the empty-search branch it holds the
+"nothing found" message, and `selected_item`, `outfit_suggestion` and
+`fit_card` stay `None`.
 
 ---
 
