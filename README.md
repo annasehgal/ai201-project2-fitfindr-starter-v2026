@@ -282,11 +282,95 @@ session dict per run, and `run_agent` fills it in this order:
      1. One FULL query and its output, pasted as text.
      2. Your three per-tool terminal tests — the command and what it printed. -->
 
-**One full query**
+**One full query** (example wardrobe, `--trace` on so every step is visible)
 
 ```
-$ python app.py ask '...'
+$ python app.py ask 'vintage graphic tee under $30' --trace
+[1] parse_query
+      in:  vintage graphic tee under $30
+      out: dict with keys: description, size, max_price
+[2] search_listings
+      in:  dict with keys: description, size, max_price
+      out: 10 items: Y2K Baby Tee — Butterfly Print, Graphic Tee — 2003 Tour Bootleg Style, Vintage Band Tee — Faded Grey … +7 more
+      →    10 match(es)
+[3] select_item
+      out: Y2K Baby Tee — Butterfly Print ($18.0, depop)
+[4] compare_price
+      in:  Y2K Baby Tee — Butterfly Print ($18.0, depop)
+      out: dict with keys: category, price, typical_price, compared_with, verdict
+      →    below typical
+[5] branch
+      →    price is fine: no alternative needed
+[6] suggest_outfit
+      in:  Y2K Baby Tee — Butterfly Print ($18.0, depop)
+      out: Hey friend! That butterfly baby tee is a total Y2K dream, and since it runs a bit small, it’s going to give yo…
+      →    10 wardrobe item(s)
+[7] create_fit_card
+      in:  Y2K Baby Tee — Butterfly Print ($18.0, depop)
+      out: Channel your inner early-2000s pop star with this Y2K Baby Tee — Butterfly Print, giving you that authentic fi…
 
+  Found:    Y2K Baby Tee — Butterfly Print — $18.0 on depop
+
+  Outfit:   Hey friend! That butterfly baby tee is a total Y2K dream, and since it runs a bit small, it’s going to give you that *chef’s kiss* authentic fitted look. 
+
+Here are two super cute ways to style it using pieces you already own:
+
+**Outfit 1: The Ultimate Y2K Contrast**
+Pair the baby tee with your **Baggy straight-leg jeans, dark wash** to play with that classic fitted-on-top, baggy-on-bottom silhouette. Throw on the **Chunky white sneakers** and your **Black crossbody bag** to keep it effortlessly cool and casual for everyday wear. 
+
+**Outfit 2: Grunge-meets-Sweet**
+Layer the tee under your **Vintage black denim jacket** and pair it with the **Wide-leg khaki trousers** for an earthy, 90s-meets-Y2K vibe. Tie the whole look together by lacing up your **Black combat boots** to add a little bit of edge to the sweet butterfly print! 
+
+Go grab it—you’ll get so much wear out of this one!
+
+  Fit card: Channel your inner early-2000s pop star with this Y2K Baby Tee — Butterfly Print, giving you that authentic fitted silhouette for just $18.00 on Depop. You can easily dress it down with baggy jeans and chunky sneakers for a casual day out, or toughen up the sweet butterfly graphic with wide-leg trousers and black combat boots for an edgy grunge-meets-sweet vibe. Grab this versatile piece before it's gone and get ready to live in it all season long!
+
+0 model calls this session, 2 served from cache
+```
+
+**The impossible query** (empty-search branch). The trace stops at step 3,
+before `select_item`, `suggest_outfit` and `create_fit_card`:
+
+```
+$ python app.py ask 'designer ballgown size XXS under $5' --trace
+[1] parse_query
+      in:  designer ballgown size XXS under $5
+      out: dict with keys: description, size, max_price
+[2] search_listings
+      in:  dict with keys: description, size, max_price
+      out: [] (empty)
+      →    0 match(es)
+[3] branch
+      →    search returned []: stopping before suggest_outfit
+
+  Nothing in the listings matched description 'designer ballgown', size XXS, under $5.
+Things to change: try broader words — 'jacket' finds more than 'cropped corduroy jacket'; drop the size, or try a neighbouring one; raise the price ceiling above $5.
+
+0 model calls this session
+```
+
+The same query through `run_agent`, printing the session fields afterwards:
+
+```
+$ python -c "
+from agent import run_agent; from utils.data_loader import get_example_wardrobe
+s = run_agent('designer ballgown size XXS under \$5', get_example_wardrobe())
+for k in ('search_results','selected_item','outfit_suggestion','fit_card','error'): print(f'{k}: {s[k]!r}')
+"
+[1] parse_query
+      in:  designer ballgown size XXS under $5
+      out: dict with keys: description, size, max_price
+[2] search_listings
+      in:  dict with keys: description, size, max_price
+      out: [] (empty)
+      →    0 match(es)
+[3] branch
+      →    search returned []: stopping before suggest_outfit
+search_results: []
+selected_item: None
+outfit_suggestion: None
+fit_card: None
+error: "Nothing in the listings matched description 'designer ballgown', size XXS, under $5.\nThings to change: try broader words — 'jacket' finds more than 'cropped corduroy jacket'; drop the size, or try a neighbouring one; raise the price ceiling above $5."
 ```
 
 **The three tools, tested one at a time**
@@ -371,10 +455,17 @@ returns `typical_price: None` and `"no comparison"` instead of raising. I chose
 this because the data has a clear price spread by category (median tops $21,
 bottoms $30, outerwear $41, shoes $46).
 
+Called directly, on an above-typical item (lst_022) and a below-typical one (lst_002):
+
 ```
-$ python -c "from tools import compare_price; from utils.data_loader import load_listings; L = {l['id']: l for l in load_listings()}; print(compare_price(L['lst_022']))"
+$ python -c "from tools import compare_price; from utils.data_loader import load_listings; L = {l['id']: l for l in load_listings()}; print(compare_price(L['lst_022'])); print(compare_price(L['lst_002']))"
 {'category': 'outerwear', 'price': 75.0, 'typical_price': 40.0, 'compared_with': 7, 'verdict': 'above typical'}
+{'category': 'tops', 'price': 18.0, 'typical_price': 21.5, 'compared_with': 14, 'verdict': 'below typical'}
 ```
+
+Called by the agent: step `[4] compare_price` in the full trace under
+[Sample Run](#sample-run) (`→ below typical`), and in the `'leather jacket'`
+trace below (`→ above typical`).
 
 **2. Second branch: price check** (`agent.py::run_agent`, after `select_item`).
 `run_agent` calls `compare_price(session["selected_item"])` and stores the
@@ -385,10 +476,57 @@ result in `session["price_check"]`.
 - **Otherwise:** no extra step, and `cheaper_alternative` stays `None`.
 
 Either way, `selected_item` is still `search_results[0]` and the run goes on to
-`suggest_outfit`. Tested both sides: `'leather jacket'` picks the $75 bomber
-(above typical) and sets `cheaper_alternative` to the $33 Olive Canvas Shacket.
-`'graphic tee under $30'` picks the $18 baby tee (below typical) and leaves it
-`None`. An empty search still stops before this step.
+`suggest_outfit`. An empty search still stops before this step (see the
+impossible query under [Sample Run](#sample-run)).
+
+**Branch taken:** `'leather jacket'` selects the $75 bomber, which is above
+typical, so step `[5] branch` finds the $33 Olive Canvas Shacket. (Trace shown;
+the outfit and fit card printed after it are left out here. The full output
+of this query is in Run 2 of style memory below.)
+
+```
+$ python app.py ask 'leather jacket' --trace
+[1] parse_query
+      in:  leather jacket
+      out: dict with keys: description, size, max_price
+[2] search_listings
+      in:  dict with keys: description, size, max_price
+      out: 7 items: 90s Leather Bomber — Black, 90s Track Jacket — Navy/White Stripe, Denim Jacket — Light Wash, Cropped … +4 more
+      →    7 match(es)
+[3] select_item
+      out: 90s Leather Bomber — Black ($75.0, depop)
+[4] compare_price
+      in:  90s Leather Bomber — Black ($75.0, depop)
+      out: dict with keys: category, price, typical_price, compared_with, verdict
+      →    above typical
+[5] branch
+      out: Shacket — Olive Canvas ($33.0, poshmark)
+      →    above typical: looked for a cheaper result in the same category
+[6] suggest_outfit
+      in:  90s Leather Bomber — Black ($75.0, depop)
+      out: Hey there! You *need* that leather bomber—it’s an absolute wardrobe MVP. Here are two effortless ways to style…
+      →    10 wardrobe item(s)
+[7] create_fit_card
+      in:  90s Leather Bomber — Black ($75.0, depop)
+      out: Every closet needs a true 90s Leather Bomber — Black to nail that perfect model-off-duty grunge or high-low co…
+```
+
+**Branch not taken:** `'vintage graphic tee under $30'` selects the $18 baby
+tee, which is below typical, so step `[5]` prints `price is fine: no alternative
+needed` (full trace under [Sample Run](#sample-run)). Both sides, read from the
+session (the per-step trace lines are filtered out with `grep`):
+
+```
+$ python -c "
+from agent import run_agent; from utils.data_loader import get_example_wardrobe
+for q in ('leather jacket', 'vintage graphic tee under \$30'):
+    s = run_agent(q, get_example_wardrobe())
+    alt = s['cheaper_alternative']
+    print(q, '->', s['selected_item']['title'], s['selected_item']['price'], '|', s['price_check'], '| cheaper_alternative:', alt and (alt['title'], alt['price']))
+" 2>&1 | grep -v '^\[\|^      '
+leather jacket -> 90s Leather Bomber — Black 75.0 | {'category': 'outerwear', 'price': 75.0, 'typical_price': 40.0, 'compared_with': 7, 'verdict': 'above typical'} | cheaper_alternative: ('Shacket — Olive Canvas', 33.0)
+vintage graphic tee under $30 -> Y2K Baby Tee — Butterfly Print 18.0 | {'category': 'tops', 'price': 18.0, 'typical_price': 21.5, 'compared_with': 14, 'verdict': 'below typical'} | cheaper_alternative: None
+```
 
 **3. Style memory: the agent remembers a wardrobe between runs**
 (`utils/style_memory.py`). It's off by default and turned on with
@@ -403,16 +541,112 @@ just before `suggest_outfit`:
 `suggest_outfit` is unchanged and still takes `(new_item, wardrobe)`. It just
 receives the remembered wardrobe. The file is gitignored; delete it to forget.
 
-Tested with two separate processes:
-- **Run 1** (`AI201_MEMORY=1`, example wardrobe, `'graphic tee under $30'`):
-  trace shows `save wardrobe → 10 item(s) remembered`, and `style_memory.json`
-  holds all 10 items.
-- **Run 2** (`AI201_MEMORY=1`, *empty* wardrobe, `'leather jacket'`, cache
-  off): trace shows `load wardrobe → 10 remembered item(s)`, and the outfit
-  named saved pieces, including the white ribbed tank top, baggy straight-leg
-  jeans and black combat boots.
-- **With memory off,** an empty wardrobe stays empty and the file is neither
-  read nor written.
+Two separate processes, starting with no `style_memory.json`.
+
+**Run 1:** memory on, example wardrobe. Step `[6] save wardrobe` saves it.
+(The `in:`/`out:` trace lines are filtered out with `grep` to keep this short.)
+
+```
+$ AI201_MEMORY=1 python app.py ask 'vintage graphic tee under $30' --trace 2>&1 | grep -v '^      in:\|^      out:'
+[1] parse_query
+[2] search_listings
+      →    10 match(es)
+[3] select_item
+[4] compare_price
+      →    below typical
+[5] branch
+      →    price is fine: no alternative needed
+[6] save wardrobe
+      →    10 item(s) remembered
+[7] suggest_outfit
+      →    10 wardrobe item(s)
+[8] create_fit_card
+
+  Found:    Y2K Baby Tee — Butterfly Print — $18.0 on depop
+
+  Outfit:   Hey friend! That butterfly baby tee is a total Y2K dream, and since it runs a bit small, it’s going to give you that *chef’s kiss* authentic fitted look. 
+
+Here are two super cute ways to style it using pieces you already own:
+
+**Outfit 1: The Ultimate Y2K Contrast**
+Pair the baby tee with your **Baggy straight-leg jeans, dark wash** to play with that classic fitted-on-top, baggy-on-bottom silhouette. Throw on the **Chunky white sneakers** and your **Black crossbody bag** to keep it effortlessly cool and casual for everyday wear. 
+
+**Outfit 2: Grunge-meets-Sweet**
+Layer the tee under your **Vintage black denim jacket** and pair it with the **Wide-leg khaki trousers** for an earthy, 90s-meets-Y2K vibe. Tie the whole look together by lacing up your **Black combat boots** to add a little bit of edge to the sweet butterfly print! 
+
+Go grab it—you’ll get so much wear out of this one!
+
+  Fit card: Channel your inner early-2000s pop star with this Y2K Baby Tee — Butterfly Print, giving you that authentic fitted silhouette for just $18.00 on Depop. You can easily dress it down with baggy jeans and chunky sneakers for a casual day out, or toughen up the sweet butterfly graphic with wide-leg trousers and black combat boots for an edgy grunge-meets-sweet vibe. Grab this versatile piece before it's gone and get ready to live in it all season long!
+
+0 model calls this session, 2 served from cache
+```
+
+What was saved:
+
+```
+$ python -c "import json; w=json.load(open('style_memory.json'))['wardrobe']; print(len(w['items']), 'items saved:'); [print(' ', i['id'], i['name']) for i in w['items']]"
+10 items saved:
+  w_001 Baggy straight-leg jeans, dark wash
+  w_002 Wide-leg khaki trousers
+  w_003 White ribbed tank top
+  w_004 Oversized grey crewneck sweatshirt
+  w_005 Black cropped zip hoodie
+  w_006 Vintage black denim jacket
+  w_007 Chunky white sneakers
+  w_008 Black combat boots
+  w_009 Brown leather belt
+  w_010 Black crossbody bag
+```
+
+**Run 2:** a new process, memory on, an **empty** wardrobe, and the cache off
+so the outfit is newly generated. Step `[6] load wardrobe` loads the 10 saved
+items, and the outfit names saved pieces (white ribbed tank top, baggy
+straight-leg jeans, black combat boots, black cropped zip hoodie, wide-leg khaki
+trousers, chunky white sneakers):
+
+```
+$ AI201_MEMORY=1 AI201_CACHE=0 python app.py ask 'leather jacket' --empty-wardrobe --trace
+(running with an empty wardrobe)
+[1] parse_query
+      in:  leather jacket
+      out: dict with keys: description, size, max_price
+[2] search_listings
+      in:  dict with keys: description, size, max_price
+      out: 7 items: 90s Leather Bomber — Black, 90s Track Jacket — Navy/White Stripe, Denim Jacket — Light Wash, Cropped … +4 more
+      →    7 match(es)
+[3] select_item
+      out: 90s Leather Bomber — Black ($75.0, depop)
+[4] compare_price
+      in:  90s Leather Bomber — Black ($75.0, depop)
+      out: dict with keys: category, price, typical_price, compared_with, verdict
+      →    above typical
+[5] branch
+      out: Shacket — Olive Canvas ($33.0, poshmark)
+      →    above typical: looked for a cheaper result in the same category
+[6] load wardrobe
+      →    10 remembered item(s)
+[7] suggest_outfit
+      in:  90s Leather Bomber — Black ($75.0, depop)
+      out: Hey friend! That 90s leather bomber is an absolute holy grail find—you definitely need to grab it. Here are tw…
+      →    10 wardrobe item(s)
+[8] create_fit_card
+      in:  90s Leather Bomber — Black ($75.0, depop)
+      out: I’m still not over finding this 90s Leather Bomber — Black for just $75.00 on Depop. It’s got that perfectly b…
+
+  Found:    90s Leather Bomber — Black — $75.0 on depop
+
+  Outfit:   Hey friend! That 90s leather bomber is an absolute holy grail find—you definitely need to grab it. Here are two effortless ways to style it using pieces you already own:
+
+**Outfit 1: The Ultimate 90s Grunge Look**
+Pair the leather bomber with your **white ribbed tank top** tucked into the **baggy straight-leg jeans, dark wash**, and ground the whole vibe with your **black combat boots**. The fitted tank balances out the boxy jacket, and the boots tie the edgy 90s aesthetic together seamlessly. 
+
+**Outfit 2: High-Low Streetwear**
+Throw the bomber over your **black cropped zip hoodie** and pair them with your **wide-leg khaki trousers** and **chunky white sneakers**. Mixing the tailored khaki trousers with the sporty hoodie and tough leather jacket creates that cool, effortlessly thrown-together look.
+
+  Fit card: I’m still not over finding this 90s Leather Bomber — Black for just $75.00 on Depop. It’s got that perfectly broken-in leather and boxy fit that makes throwing together a 90s grunge or high-low streetwear look ridiculously easy. Run, don't walk, to grab this holy grail before I keep it for myself!
+
+2 model calls this session, 774 prompt + 263 output tokens
+```
 
 <!-- ═══════════════════════ UNIT 4 — THE TEST ═══════════════════════
 
