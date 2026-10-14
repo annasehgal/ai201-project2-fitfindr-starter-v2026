@@ -1553,6 +1553,28 @@ real run.
   search and one listing, `lst_013`), and criterion 4 got one card per
   listing per run. The results hold for those inputs, not every query.
 
+---
+
+## Extra Credit - Unit 4: Retry With Looser Constraints
+
+**Declared before implementation.** This is the optional stretch feature
+"retry with looser constraints". It is extra credit and separate from this
+unit's one improvement (the 5xx retry), and it is evaluated separately.
+
+Planned behavior, in `agent.py::run_agent`:
+- When `search_listings` returns `[]` and the parsed query has a size, search
+  once more with the size filter removed. The description and `max_price` stay
+  exactly the same.
+- Both searches go through MCP (`mcp_client.call_tool`). There is no direct
+  call to `search_listings`.
+- The user is told that the size filter was dropped, whether or not the
+  second search finds anything.
+- If the second search is also empty, the loop stops before `suggest_outfit`,
+  as before. There is only one retry.
+- If the query has no size, there is nothing to drop, so there is no retry.
+
+Status: declared, not implemented yet.
+
 <!-- ═════════════════════════════════════════════════════════════════════
 
      SUBMISSION CHECKLIST - unit 3
