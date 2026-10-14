@@ -30,6 +30,7 @@ The model name and the temperature live in config.py, not here.
 import hashlib
 import json
 import os
+import random
 import re
 import sys
 import time
@@ -43,6 +44,10 @@ _prompt_tokens = 0
 _output_tokens = 0
 _client = None
 _budget_warned = False
+
+# Temporary server-side errors, retried a few times with backoff + jitter.
+_SERVER_BUSY_CODES = {500, 502, 503, 504}
+_SERVER_BUSY_RETRIES = 3
 
 
 class QuotaGuard(Exception):
@@ -215,6 +220,12 @@ def _explain(exc: Exception) -> str:
             f"AI201_MODEL in your .env, put it back. Otherwise post in the help "
             f"channel — this is not something you caused."
         )
+    if getattr(exc, "code", None) in _SERVER_BUSY_CODES or "503" in message:
+        return (
+            f"The model service is overloaded right now (a temporary error on "
+            f"Google's side, not your key or code). Still failing after "
+            f"{_SERVER_BUSY_RETRIES} tries. Wait a few minutes and run it again."
+        )
     if "connection" in message or "timeout" in message or "network" in message:
         return "Couldn't reach the model. Check your internet connection and try again."
     return f"Couldn't reach the model: {exc}"
@@ -328,6 +339,25 @@ def generate(
                 or "resource" in message and "exhaust" in message
                 or "rate" in message and "limit" in message
             )
+            # A 5xx (e.g. 503 "high demand") is the service, not your code or
+            # key. Worth a couple of short retries; anything else (bad key,
+            # bad model name) won't fix itself, so it still fails fast.
+            server_busy = (
+                getattr(exc, "code", None) in _SERVER_BUSY_CODES or "503" in message
+            )
+            if server_busy:
+                if attempt + 1 >= _SERVER_BUSY_RETRIES:
+                    raise ModelUnavailable(_explain(exc)) from exc
+                backoff = 2.0 ** (attempt + 1) + random.uniform(0, 1)
+                print(
+                    f"  [server busy] the model service is overloaded. Retrying "
+                    f"in {backoff:.0f}s (attempt {attempt + 1} of "
+                    f"{_SERVER_BUSY_RETRIES}).",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                time.sleep(backoff)
+                continue
             if not rate_limited:
                 raise ModelUnavailable(_explain(exc)) from exc
             backoff = _retry_delay(exc, attempt)
