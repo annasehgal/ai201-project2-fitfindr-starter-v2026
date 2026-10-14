@@ -13,10 +13,7 @@
 > python app.py ask 'vintage graphic tee under $30'
 > ```
 >
-> All three tools are stubs, so that last command will do nothing useful yet.
-> That's the starting position.
->
-> **The rest of this file is your submission.** Fill it in as you go.
+> **The rest of this file is the submission.**
 
 ---
 
@@ -122,8 +119,6 @@ the loop stops before `suggest_outfit`, which is expected at this point.
 
 ## What This Does
 
-<!-- Three or four sentences: what a user asks for, and what they get back. -->
-
 FitFindr takes a plain-language request like "graphic tee under $30, size M"
 and pulls out a description, a size and a price ceiling. `search_listings`
 filters the thrift listings by size and price and ranks what's left by how many
@@ -137,16 +132,6 @@ to change: broader words, a different size, or a higher price.
 ---
 
 ## Tool Inventory
-
-<!-- Four lines per tool. This is worth 2 points and it's the single most
-     common place students lose them.
-
-     "Returns a list" earns NOTHING. The description has to say what is IN
-     the list.
-
-     The empty case isn't optional either - it's the thing your loop branches
-     on, and if you don't decide it here you'll discover it as a crash in
-     Milestone 5. -->
 
 ### `search_listings`
 
@@ -253,17 +238,6 @@ The agent calls it with `call_tool("search_listings", {...})` from `mcp_client.p
 
 ## Planning Loop
 
-<!-- Your branch rule, stated as a rule - the condition AND both paths - plus
-     the file and function that holds it.
-
-     Like this:
-       "If search_listings returns an empty list, put a message in the session
-        and stop. Otherwise take the first result and go to suggest_outfit."
-        - agent.py::run_agent
-
-     The grader checks your code against what you claim here, so the file and
-     function have to be real. -->
-
 **Branch rule:** If `search_listings` returns an empty list, put a message in
 `session["error"]` that names what was searched for and what the user could
 change (broader words, drop or change the size, raise the price ceiling), then
@@ -271,9 +245,12 @@ return the session without calling `suggest_outfit` or `create_fit_card`.
 Otherwise, take the first result (the best match), store it in
 `session["selected_item"]`, and go on to `suggest_outfit`.
 
-**Where it lives:** `agent.py::run_agent`, in the
-`if not session["search_results"]:` check. The "nothing found" message is
-built in `agent.py::_nothing_found_message`.
+**Where it lives:** `agent.py::run_agent`, in the `if not results:` check,
+where `results` is what `search_listings` returned (also stored in
+`session["search_results"]`). The "nothing found" message is built in
+`agent.py::_nothing_found_message`. (In Unit 3 the check read
+`if not session["search_results"]:`. Unit 4's MCP move renamed the variable,
+not the rule.)
 
 **Second branch (extra credit):** after selecting the item, `run_agent` checks
 its price with `compare_price`. If it's above typical for its category, it
@@ -300,9 +277,11 @@ any warning.
 session dict per run, and `run_agent` fills it in this order:
 1. `query`: the raw text the user typed.
 2. `parsed`: the `parse_query` output (`description`, `size`, `max_price`).
-3. `search_results`: `run_agent` calls
-   `search_listings(description, size, max_price)` with the three `parsed`
-   values, and the returned list is stored in `session["search_results"]`.
+3. `search_results`: `run_agent` calls `search_listings` with the three
+   `parsed` values, and the returned list is stored in
+   `session["search_results"]`. Since Unit 4 Milestone 1 this call goes
+   through MCP: `call_tool("search_listings", {"description": ..., "size": ...,
+   "max_price": ...})`.
 4. `selected_item`: `search_results[0]`. **This is the item that reaches
    `suggest_outfit` on its own, so the user never types it again.**
 5. `outfit_suggestion`: the string from
@@ -321,10 +300,9 @@ session dict per run, and `run_agent` fills it in this order:
 
 ## Sample Run
 
-<!-- Two things go here.
-
-     1. One FULL query and its output, pasted as text.
-     2. Your three per-tool terminal tests - the command and what it printed. -->
+Recorded in Unit 3, before the MCP move, so step 2 reads `search_listings`
+rather than `search_listings (via MCP)`. The Unit 4 version of the same query
+is under [Loop Trace](#loop-trace).
 
 **One full query** (example wardrobe, `--trace` on so every step is visible)
 
@@ -445,13 +423,6 @@ Nothing beats a broken-in pair of Vintage Levi's 501 Jeans - Medium Wash for tha
 ---
 
 ## How I Used AI
-
-<!-- Two specific moments. What you asked, what came back, what you changed.
-
-     "I used Claude to help me code" is not enough.
-
-     "I gave Claude my search_listings spec. It returned None on no match
-     instead of an empty list, so I changed it" is the level we want. -->
 
 **Moment 1**
 
@@ -928,22 +899,6 @@ were run with the same pre-retry `generate.py`. They are not in the table.
 
 ## Verdicts and Diagnoses
 
-<!-- MET or MISSED per criterion against LAST UNIT's target, plus a sentence on
-     how you decided.
-
-     Then, for every miss: which of the four places it happened - a tool, the
-     loop's branch, the session, or the model's output - AND the mechanism.
-
-     Not a diagnosis:  "The fit card was bad."
-     A diagnosis:      "The fit card criterion missed on 2 of 5 items. Both had
-                        an empty brand field. My prompt puts the brand in the
-                        first sentence, so the card opened with a blank and read
-                        like a fragment. The tool worked; the prompt assumed a
-                        field that isn't always there."
-
-     Look for a pattern. Three misses on the same tool is one problem, not
-     three. -->
-
 Verdicts are read against the targets in `criteria.md`, using the baseline
 above (pre-retry `generate.py` from `760370b`, 5 tries per criterion).
 
@@ -985,8 +940,9 @@ the session or the model's text, because no text came back at all.
 
 So a temporary, server-side error ends the run on its first attempt, with no
 retry. The error can clear quickly: in Milestone 2's empty-wardrobe run, the
-retry version recovered from 503s after waits of 2-5 seconds. The tool code and prompts were never the
-problem in these tries. They never got a response to work with.
+retry version recovered from 503s after waits of 2-5 seconds. The tool code
+and prompts were never the problem in these tries. They never got a response
+to work with.
 
 **Criterion 1 - MISSED (3/5).** Step and mechanism, per try:
 - Try 4: the 503 hit during step `[6] suggest_outfit`, so neither model tool returned anything.
@@ -1040,21 +996,9 @@ already-committed 5xx retry (`9771322`) targets, and the after-run will measure
 whether it works. A rerun is also the first chance to actually score criterion
 4's listing-fact checks.
 
-
-
 ---
 
 ## Loop Trace
-
-<!-- One full run, printed step by step, with the MCP call visible in it.
-
-     `python app.py ask '...' --trace` once you've added the trace.step()
-     calls in Milestone 2.
-
-     Worth pasting BOTH the happy path and the empty-search path. The empty
-     one should be visibly shorter, because it stops. If your two traces are
-     the same length, your branch isn't working - and this is the fastest way
-     anyone will ever find that out. -->
 
 **Happy path**
 
@@ -1112,10 +1056,9 @@ Things to change: try broader words - 'jacket' finds more than 'cropped corduroy
 The empty-search trace stops at step 3 and the happy path runs to step 7, so
 the branch works. Step 2 in both is the MCP call.
 
-**On the MCP move:** <!-- what changed in your code, and whether anything
-behaved differently afterwards. If the rewire didn't work, say exactly where it
-broke - the error text and the last thing that worked. That earns the point in
-full. -->
+**On the MCP move:** it worked. `search_listings` now runs through MCP (step 2
+in both traces above), and nothing behaved differently afterwards: the MCP call
+returns the same `list[dict]` as the direct call. Details and evidence below.
 
 ### Milestone 1 - MCP Move: `search_listings` (works)
 
