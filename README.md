@@ -2,7 +2,7 @@
 
 > ### 👋 Start here
 >
-> **New to this repo? Read [RUNNING.md](RUNNING.md) first** — setup, every
+> **New to this repo? Read [RUNNING.md](RUNNING.md) first** - setup, every
 > command, and what to do when something breaks.
 >
 > Once `python test.py` passes:
@@ -24,7 +24,7 @@
      HOW TO USE THIS FILE
 
      This is your submission. Fill each section in as you finish the milestone
-     it belongs to — don't leave it all to the end.
+     it belongs to - don't leave it all to the end.
 
      Unit 3 asks for the first five sections. Unit 4 adds the five below them.
      Leave the unit 4 sections alone until then; they're here so you know
@@ -35,7 +35,7 @@
      gets none.
      ───────────────────────────────────────────────────────────────────────── -->
 
-<!-- ═══════════════════════ UNIT 3 — THE BUILD ═══════════════════════ -->
+<!-- ═══════════════════════ UNIT 3 - THE BUILD ═══════════════════════ -->
 
 ## Milestone 1: Reading the Data and Running the Starter
 
@@ -47,7 +47,7 @@
 | Field | Type | Example | Notes |
 |---|---|---|---|
 | `id` | str | `lst_001` | Unique ID |
-| `title` | str | `Vintage Levi's 501 Jeans — Medium Wash` | Best text to match a query against |
+| `title` | str | `Vintage Levi's 501 Jeans - Medium Wash` | Best text to match a query against |
 | `description` | str | `Classic 501s in a perfect medium wash...` | Longer text; mentions fit and flaws |
 | `category` | str | `bottoms` | One of tops (15), bottoms (10), outerwear (8), shoes (4), accessories (3) |
 | `style_tags` | list[str] | `['vintage', 'classic', 'denim', 'streetwear']` | Good for matching words like "vintage" or "graphic tee" |
@@ -90,7 +90,7 @@ dict with an `items` list. Each item has:
 { "items": [] }
 ```
 
-`suggest_outfit` has to handle that case — it still gets an item, but there's
+`suggest_outfit` has to handle that case - it still gets an item, but there's
 nothing to pair it with, so it should suggest general styling instead of crashing.
 
 ### Running the starter
@@ -108,7 +108,7 @@ $ python app.py ask 'vintage graphic tee under $30'
       →    search returned []: stopping before suggest_outfit
 
   Nothing in the listings matched description 'vintage graphic tee', under $30.
-Things to change: try broader words — 'jacket' finds more than 'cropped corduroy jacket'; raise the price ceiling above $30.
+Things to change: try broader words - 'jacket' finds more than 'cropped corduroy jacket'; raise the price ceiling above $30.
 
 0 model calls this session
 ```
@@ -144,7 +144,7 @@ to change: broader words, a different size, or a higher price.
      "Returns a list" earns NOTHING. The description has to say what is IN
      the list.
 
-     The empty case isn't optional either — it's the thing your loop branches
+     The empty case isn't optional either - it's the thing your loop branches
      on, and if you don't decide it here you'll discover it as a crash in
      Milestone 5. -->
 
@@ -253,13 +253,13 @@ The agent calls it with `call_tool("search_listings", {...})` from `mcp_client.p
 
 ## Planning Loop
 
-<!-- Your branch rule, stated as a rule — the condition AND both paths — plus
+<!-- Your branch rule, stated as a rule - the condition AND both paths - plus
      the file and function that holds it.
 
      Like this:
        "If search_listings returns an empty list, put a message in the session
         and stop. Otherwise take the first result and go to suggest_outfit."
-        — agent.py::run_agent
+        - agent.py::run_agent
 
      The grader checks your code against what you claim here, so the file and
      function have to be real. -->
@@ -324,7 +324,7 @@ session dict per run, and `run_agent` fills it in this order:
 <!-- Two things go here.
 
      1. One FULL query and its output, pasted as text.
-     2. Your three per-tool terminal tests — the command and what it printed. -->
+     2. Your three per-tool terminal tests - the command and what it printed. -->
 
 **One full query** (example wardrobe, `--trace` on so every step is visible)
 
@@ -335,25 +335,25 @@ $ python app.py ask 'vintage graphic tee under $30' --trace
       out: dict with keys: description, size, max_price
 [2] search_listings
       in:  dict with keys: description, size, max_price
-      out: 10 items: Y2K Baby Tee — Butterfly Print, Graphic Tee — 2003 Tour Bootleg Style, Vintage Band Tee — Faded Grey … +7 more
+      out: 10 items: Y2K Baby Tee - Butterfly Print, Graphic Tee - 2003 Tour Bootleg Style, Vintage Band Tee - Faded Grey … +7 more
       →    10 match(es)
 [3] select_item
-      out: Y2K Baby Tee — Butterfly Print ($18.0, depop)
+      out: Y2K Baby Tee - Butterfly Print ($18.0, depop)
 [4] compare_price
-      in:  Y2K Baby Tee — Butterfly Print ($18.0, depop)
+      in:  Y2K Baby Tee - Butterfly Print ($18.0, depop)
       out: dict with keys: category, price, typical_price, compared_with, verdict
       →    below typical
 [5] branch
       →    price is fine: no alternative needed
 [6] suggest_outfit
-      in:  Y2K Baby Tee — Butterfly Print ($18.0, depop)
+      in:  Y2K Baby Tee - Butterfly Print ($18.0, depop)
       out: Hey friend! That butterfly baby tee is a total Y2K dream, and since it runs a bit small, it’s going to give yo…
       →    10 wardrobe item(s)
 [7] create_fit_card
-      in:  Y2K Baby Tee — Butterfly Print ($18.0, depop)
-      out: Channel your inner early-2000s pop star with this Y2K Baby Tee — Butterfly Print, giving you that authentic fi…
+      in:  Y2K Baby Tee - Butterfly Print ($18.0, depop)
+      out: Channel your inner early-2000s pop star with this Y2K Baby Tee - Butterfly Print, giving you that authentic fi…
 
-  Found:    Y2K Baby Tee — Butterfly Print — $18.0 on depop
+  Found:    Y2K Baby Tee - Butterfly Print - $18.0 on depop
 
   Outfit:   Hey friend! That butterfly baby tee is a total Y2K dream, and since it runs a bit small, it’s going to give you that *chef’s kiss* authentic fitted look. 
 
@@ -365,9 +365,9 @@ Pair the baby tee with your **Baggy straight-leg jeans, dark wash** to play with
 **Outfit 2: Grunge-meets-Sweet**
 Layer the tee under your **Vintage black denim jacket** and pair it with the **Wide-leg khaki trousers** for an earthy, 90s-meets-Y2K vibe. Tie the whole look together by lacing up your **Black combat boots** to add a little bit of edge to the sweet butterfly print! 
 
-Go grab it—you’ll get so much wear out of this one!
+Go grab it-you’ll get so much wear out of this one!
 
-  Fit card: Channel your inner early-2000s pop star with this Y2K Baby Tee — Butterfly Print, giving you that authentic fitted silhouette for just $18.00 on Depop. You can easily dress it down with baggy jeans and chunky sneakers for a casual day out, or toughen up the sweet butterfly graphic with wide-leg trousers and black combat boots for an edgy grunge-meets-sweet vibe. Grab this versatile piece before it's gone and get ready to live in it all season long!
+  Fit card: Channel your inner early-2000s pop star with this Y2K Baby Tee - Butterfly Print, giving you that authentic fitted silhouette for just $18.00 on Depop. You can easily dress it down with baggy jeans and chunky sneakers for a casual day out, or toughen up the sweet butterfly graphic with wide-leg trousers and black combat boots for an edgy grunge-meets-sweet vibe. Grab this versatile piece before it's gone and get ready to live in it all season long!
 
 0 model calls this session, 2 served from cache
 ```
@@ -388,7 +388,7 @@ $ python app.py ask 'designer ballgown size XXS under $5' --trace
       →    search returned []: stopping before suggest_outfit
 
   Nothing in the listings matched description 'designer ballgown', size XXS, under $5.
-Things to change: try broader words — 'jacket' finds more than 'cropped corduroy jacket'; drop the size, or try a neighbouring one; raise the price ceiling above $5.
+Things to change: try broader words - 'jacket' finds more than 'cropped corduroy jacket'; drop the size, or try a neighbouring one; raise the price ceiling above $5.
 
 0 model calls this session
 ```
@@ -414,19 +414,19 @@ search_results: []
 selected_item: None
 outfit_suggestion: None
 fit_card: None
-error: "Nothing in the listings matched description 'designer ballgown', size XXS, under $5.\nThings to change: try broader words — 'jacket' finds more than 'cropped corduroy jacket'; drop the size, or try a neighbouring one; raise the price ceiling above $5."
+error: "Nothing in the listings matched description 'designer ballgown', size XXS, under $5.\nThings to change: try broader words - 'jacket' finds more than 'cropped corduroy jacket'; drop the size, or try a neighbouring one; raise the price ceiling above $5."
 ```
 
 **The three tools, tested one at a time**
 
 ```
 $ python -c "from tools import search_listings; print(search_listings('graphic tee', max_price=30))"
-[{'id': 'lst_002', 'title': 'Y2K Baby Tee — Butterfly Print', 'description': 'Super cute early 2000s baby tee with butterfly graphic. Fitted crop length. Tag says medium but fits like a small.', 'category': 'tops', 'style_tags': ['y2k', 'vintage', 'graphic tee', 'cottagecore'], 'size': 'S/M', 'condition': 'excellent', 'price': 18.0, 'colors': ['white', 'pink', 'purple'], 'brand': None, 'platform': 'depop'}, {'id': 'lst_006', 'title': 'Graphic Tee — 2003 Tour Bootleg Style', 'description': 'Vintage-style bootleg tee with faded graphic. Slightly boxy fit. 100% cotton, soft and worn-in.', 'category': 'tops', 'style_tags': ['graphic tee', 'vintage', 'grunge', 'streetwear', 'band tee'], 'size': 'L', 'condition': 'good', 'price': 24.0, 'colors': ['black'], 'brand': None, 'platform': 'depop'}, {'id': 'lst_017', 'title': 'Mesh Long-Sleeve Top — Black', 'description': 'Sheer black mesh long-sleeve. Great for layering under a graphic tee or over a bralette. Stretchy material, fits true to size.', 'category': 'tops', 'style_tags': ['y2k', 'grunge', 'goth', 'layering'], 'size': 'S/M', 'condition': 'excellent', 'price': 15.0, 'colors': ['black'], 'brand': None, 'platform': 'depop'}, {'id': 'lst_033', 'title': 'Vintage Band Tee — Faded Grey', 'description': 'Faded grey band-style tee with distressed graphic. Crew neck. Fits boxy. Well-loved but no holes or major damage.', 'category': 'tops', 'style_tags': ['vintage', 'grunge', 'band tee', 'graphic tee', 'streetwear'], 'size': 'L', 'condition': 'fair', 'price': 19.0, 'colors': ['grey', 'charcoal'], 'brand': None, 'platform': 'depop'}, {'id': 'lst_011', 'title': 'Low-Rise Cargo Pants — Khaki', 'description': 'Y2K era low-rise cargo pants. Lots of pockets. Khaki color, slightly distressed at the hems. Great for layering with a long tee.', 'category': 'bottoms', 'style_tags': ['y2k', 'cargo', '2000s', 'streetwear'], 'size': 'W29', 'condition': 'fair', 'price': 27.0, 'colors': ['khaki', 'tan'], 'brand': None, 'platform': 'poshmark'}, {'id': 'lst_015', 'title': 'Vintage Graphic Hoodie — Faded Black', 'description': 'Faded black pullover hoodie with barely-visible vintage graphic on the chest. Cozy interior. Some pilling but adds to the worn-in look.', 'category': 'tops', 'style_tags': ['vintage', 'grunge', 'graphic', 'streetwear'], 'size': 'L', 'condition': 'fair', 'price': 26.0, 'colors': ['black', 'charcoal'], 'brand': None, 'platform': 'depop'}]
+[{'id': 'lst_002', 'title': 'Y2K Baby Tee - Butterfly Print', 'description': 'Super cute early 2000s baby tee with butterfly graphic. Fitted crop length. Tag says medium but fits like a small.', 'category': 'tops', 'style_tags': ['y2k', 'vintage', 'graphic tee', 'cottagecore'], 'size': 'S/M', 'condition': 'excellent', 'price': 18.0, 'colors': ['white', 'pink', 'purple'], 'brand': None, 'platform': 'depop'}, {'id': 'lst_006', 'title': 'Graphic Tee - 2003 Tour Bootleg Style', 'description': 'Vintage-style bootleg tee with faded graphic. Slightly boxy fit. 100% cotton, soft and worn-in.', 'category': 'tops', 'style_tags': ['graphic tee', 'vintage', 'grunge', 'streetwear', 'band tee'], 'size': 'L', 'condition': 'good', 'price': 24.0, 'colors': ['black'], 'brand': None, 'platform': 'depop'}, {'id': 'lst_017', 'title': 'Mesh Long-Sleeve Top - Black', 'description': 'Sheer black mesh long-sleeve. Great for layering under a graphic tee or over a bralette. Stretchy material, fits true to size.', 'category': 'tops', 'style_tags': ['y2k', 'grunge', 'goth', 'layering'], 'size': 'S/M', 'condition': 'excellent', 'price': 15.0, 'colors': ['black'], 'brand': None, 'platform': 'depop'}, {'id': 'lst_033', 'title': 'Vintage Band Tee - Faded Grey', 'description': 'Faded grey band-style tee with distressed graphic. Crew neck. Fits boxy. Well-loved but no holes or major damage.', 'category': 'tops', 'style_tags': ['vintage', 'grunge', 'band tee', 'graphic tee', 'streetwear'], 'size': 'L', 'condition': 'fair', 'price': 19.0, 'colors': ['grey', 'charcoal'], 'brand': None, 'platform': 'depop'}, {'id': 'lst_011', 'title': 'Low-Rise Cargo Pants - Khaki', 'description': 'Y2K era low-rise cargo pants. Lots of pockets. Khaki color, slightly distressed at the hems. Great for layering with a long tee.', 'category': 'bottoms', 'style_tags': ['y2k', 'cargo', '2000s', 'streetwear'], 'size': 'W29', 'condition': 'fair', 'price': 27.0, 'colors': ['khaki', 'tan'], 'brand': None, 'platform': 'poshmark'}, {'id': 'lst_015', 'title': 'Vintage Graphic Hoodie - Faded Black', 'description': 'Faded black pullover hoodie with barely-visible vintage graphic on the chest. Cozy interior. Some pilling but adds to the worn-in look.', 'category': 'tops', 'style_tags': ['vintage', 'grunge', 'graphic', 'streetwear'], 'size': 'L', 'condition': 'fair', 'price': 26.0, 'colors': ['black', 'charcoal'], 'brand': None, 'platform': 'depop'}]
 ```
 
 ```
 $ python -c "from tools import suggest_outfit; from utils.data_loader import get_example_wardrobe, load_listings; print(suggest_outfit(load_listings()[0], get_example_wardrobe()))"
-Hey there! I am so excited for you to look at these vintage Levi's 501s—they are an absolute thrift store holy grail and fill a great gap since your other jeans are baggy dark wash! Here are two super easy, effortless ways to style them using what’s already in your closet:
+Hey there! I am so excited for you to look at these vintage Levi's 501s-they are an absolute thrift store holy grail and fill a great gap since your other jeans are baggy dark wash! Here are two super easy, effortless ways to style them using what’s already in your closet:
 
 **Outfit 1: The Off-Duty Casual Look**
 Tuck your **White ribbed tank top** into the Levi's, thread through the **Brown leather belt**, and layer your **Oversized grey crewneck sweatshirt** right over top (or drape it casually over your shoulders). Slip into your **Chunky white sneakers** and grab the **Black crossbody bag** for an effortlessly cool, everyday streetwear vibe that lets the classic medium wash shine.
@@ -434,12 +434,12 @@ Tuck your **White ribbed tank top** into the Levi's, thread through the **Brown 
 **Outfit 2: The Edgy Denim-on-Denim Vibe**
 Pair the 501s with your **Black cropped zip hoodie**, and layer the **Vintage black denim jacket** on top for a cool mix of black and blue denim. Lace up your **Black combat boots** to ground the look, and you've got an instant, grunge-leaning outfit that takes zero effort to pull together. 
 
-Go grab those jeans—they're totally worth it!
+Go grab those jeans-they're totally worth it!
 ```
 
 ```
 $ AI201_CACHE=0 python -c "from tools import create_fit_card; from utils.data_loader import load_listings; print(create_fit_card('white tank top with sneakers', load_listings()[0]))"
-Nothing beats a broken-in pair of Vintage Levi's 501 Jeans — Medium Wash for that effortless, off-duty model look. I kept it super casual by styling them with a crisp white tank top and my favorite sneakers for the ultimate laid-back weekend fit. Grab them over on Depop right now for just $38.00 before someone else snags them!
+Nothing beats a broken-in pair of Vintage Levi's 501 Jeans - Medium Wash for that effortless, off-duty model look. I kept it super casual by styling them with a crisp white tank top and my favorite sneakers for the ultimate laid-back weekend fit. Grab them over on Depop right now for just $38.00 before someone else snags them!
 ```
 
 ---
@@ -535,24 +535,24 @@ $ python app.py ask 'leather jacket' --trace
       out: dict with keys: description, size, max_price
 [2] search_listings
       in:  dict with keys: description, size, max_price
-      out: 7 items: 90s Leather Bomber — Black, 90s Track Jacket — Navy/White Stripe, Denim Jacket — Light Wash, Cropped … +4 more
+      out: 7 items: 90s Leather Bomber - Black, 90s Track Jacket - Navy/White Stripe, Denim Jacket - Light Wash, Cropped … +4 more
       →    7 match(es)
 [3] select_item
-      out: 90s Leather Bomber — Black ($75.0, depop)
+      out: 90s Leather Bomber - Black ($75.0, depop)
 [4] compare_price
-      in:  90s Leather Bomber — Black ($75.0, depop)
+      in:  90s Leather Bomber - Black ($75.0, depop)
       out: dict with keys: category, price, typical_price, compared_with, verdict
       →    above typical
 [5] branch
-      out: Shacket — Olive Canvas ($33.0, poshmark)
+      out: Shacket - Olive Canvas ($33.0, poshmark)
       →    above typical: looked for a cheaper result in the same category
 [6] suggest_outfit
-      in:  90s Leather Bomber — Black ($75.0, depop)
-      out: Hey there! You *need* that leather bomber—it’s an absolute wardrobe MVP. Here are two effortless ways to style…
+      in:  90s Leather Bomber - Black ($75.0, depop)
+      out: Hey there! You *need* that leather bomber-it’s an absolute wardrobe MVP. Here are two effortless ways to style…
       →    10 wardrobe item(s)
 [7] create_fit_card
-      in:  90s Leather Bomber — Black ($75.0, depop)
-      out: Every closet needs a true 90s Leather Bomber — Black to nail that perfect model-off-duty grunge or high-low co…
+      in:  90s Leather Bomber - Black ($75.0, depop)
+      out: Every closet needs a true 90s Leather Bomber - Black to nail that perfect model-off-duty grunge or high-low co…
 ```
 
 **Branch not taken:** `'vintage graphic tee under $30'` selects the $18 baby
@@ -568,8 +568,8 @@ for q in ('leather jacket', 'vintage graphic tee under \$30'):
     alt = s['cheaper_alternative']
     print(q, '->', s['selected_item']['title'], s['selected_item']['price'], '|', s['price_check'], '| cheaper_alternative:', alt and (alt['title'], alt['price']))
 " 2>&1 | grep -v '^\[\|^      '
-leather jacket -> 90s Leather Bomber — Black 75.0 | {'category': 'outerwear', 'price': 75.0, 'typical_price': 40.0, 'compared_with': 7, 'verdict': 'above typical'} | cheaper_alternative: ('Shacket — Olive Canvas', 33.0)
-vintage graphic tee under $30 -> Y2K Baby Tee — Butterfly Print 18.0 | {'category': 'tops', 'price': 18.0, 'typical_price': 21.5, 'compared_with': 14, 'verdict': 'below typical'} | cheaper_alternative: None
+leather jacket -> 90s Leather Bomber - Black 75.0 | {'category': 'outerwear', 'price': 75.0, 'typical_price': 40.0, 'compared_with': 7, 'verdict': 'above typical'} | cheaper_alternative: ('Shacket - Olive Canvas', 33.0)
+vintage graphic tee under $30 -> Y2K Baby Tee - Butterfly Print 18.0 | {'category': 'tops', 'price': 18.0, 'typical_price': 21.5, 'compared_with': 14, 'verdict': 'below typical'} | cheaper_alternative: None
 ```
 
 **3. Style memory: the agent remembers a wardrobe between runs**
@@ -606,7 +606,7 @@ $ AI201_MEMORY=1 python app.py ask 'vintage graphic tee under $30' --trace 2>&1 
       →    10 wardrobe item(s)
 [8] create_fit_card
 
-  Found:    Y2K Baby Tee — Butterfly Print — $18.0 on depop
+  Found:    Y2K Baby Tee - Butterfly Print - $18.0 on depop
 
   Outfit:   Hey friend! That butterfly baby tee is a total Y2K dream, and since it runs a bit small, it’s going to give you that *chef’s kiss* authentic fitted look. 
 
@@ -618,9 +618,9 @@ Pair the baby tee with your **Baggy straight-leg jeans, dark wash** to play with
 **Outfit 2: Grunge-meets-Sweet**
 Layer the tee under your **Vintage black denim jacket** and pair it with the **Wide-leg khaki trousers** for an earthy, 90s-meets-Y2K vibe. Tie the whole look together by lacing up your **Black combat boots** to add a little bit of edge to the sweet butterfly print! 
 
-Go grab it—you’ll get so much wear out of this one!
+Go grab it-you’ll get so much wear out of this one!
 
-  Fit card: Channel your inner early-2000s pop star with this Y2K Baby Tee — Butterfly Print, giving you that authentic fitted silhouette for just $18.00 on Depop. You can easily dress it down with baggy jeans and chunky sneakers for a casual day out, or toughen up the sweet butterfly graphic with wide-leg trousers and black combat boots for an edgy grunge-meets-sweet vibe. Grab this versatile piece before it's gone and get ready to live in it all season long!
+  Fit card: Channel your inner early-2000s pop star with this Y2K Baby Tee - Butterfly Print, giving you that authentic fitted silhouette for just $18.00 on Depop. You can easily dress it down with baggy jeans and chunky sneakers for a casual day out, or toughen up the sweet butterfly graphic with wide-leg trousers and black combat boots for an edgy grunge-meets-sweet vibe. Grab this versatile piece before it's gone and get ready to live in it all season long!
 
 0 model calls this session, 2 served from cache
 ```
@@ -656,30 +656,30 @@ $ AI201_MEMORY=1 AI201_CACHE=0 python app.py ask 'leather jacket' --empty-wardro
       out: dict with keys: description, size, max_price
 [2] search_listings
       in:  dict with keys: description, size, max_price
-      out: 7 items: 90s Leather Bomber — Black, 90s Track Jacket — Navy/White Stripe, Denim Jacket — Light Wash, Cropped … +4 more
+      out: 7 items: 90s Leather Bomber - Black, 90s Track Jacket - Navy/White Stripe, Denim Jacket - Light Wash, Cropped … +4 more
       →    7 match(es)
 [3] select_item
-      out: 90s Leather Bomber — Black ($75.0, depop)
+      out: 90s Leather Bomber - Black ($75.0, depop)
 [4] compare_price
-      in:  90s Leather Bomber — Black ($75.0, depop)
+      in:  90s Leather Bomber - Black ($75.0, depop)
       out: dict with keys: category, price, typical_price, compared_with, verdict
       →    above typical
 [5] branch
-      out: Shacket — Olive Canvas ($33.0, poshmark)
+      out: Shacket - Olive Canvas ($33.0, poshmark)
       →    above typical: looked for a cheaper result in the same category
 [6] load wardrobe
       →    10 remembered item(s)
 [7] suggest_outfit
-      in:  90s Leather Bomber — Black ($75.0, depop)
-      out: Hey friend! That 90s leather bomber is an absolute holy grail find—you definitely need to grab it. Here are tw…
+      in:  90s Leather Bomber - Black ($75.0, depop)
+      out: Hey friend! That 90s leather bomber is an absolute holy grail find-you definitely need to grab it. Here are tw…
       →    10 wardrobe item(s)
 [8] create_fit_card
-      in:  90s Leather Bomber — Black ($75.0, depop)
-      out: I’m still not over finding this 90s Leather Bomber — Black for just $75.00 on Depop. It’s got that perfectly b…
+      in:  90s Leather Bomber - Black ($75.0, depop)
+      out: I’m still not over finding this 90s Leather Bomber - Black for just $75.00 on Depop. It’s got that perfectly b…
 
-  Found:    90s Leather Bomber — Black — $75.0 on depop
+  Found:    90s Leather Bomber - Black - $75.0 on depop
 
-  Outfit:   Hey friend! That 90s leather bomber is an absolute holy grail find—you definitely need to grab it. Here are two effortless ways to style it using pieces you already own:
+  Outfit:   Hey friend! That 90s leather bomber is an absolute holy grail find-you definitely need to grab it. Here are two effortless ways to style it using pieces you already own:
 
 **Outfit 1: The Ultimate 90s Grunge Look**
 Pair the leather bomber with your **white ribbed tank top** tucked into the **baggy straight-leg jeans, dark wash**, and ground the whole vibe with your **black combat boots**. The fitted tank balances out the boxy jacket, and the boots tie the edgy 90s aesthetic together seamlessly. 
@@ -687,28 +687,19 @@ Pair the leather bomber with your **white ribbed tank top** tucked into the **ba
 **Outfit 2: High-Low Streetwear**
 Throw the bomber over your **black cropped zip hoodie** and pair them with your **wide-leg khaki trousers** and **chunky white sneakers**. Mixing the tailored khaki trousers with the sporty hoodie and tough leather jacket creates that cool, effortlessly thrown-together look.
 
-  Fit card: I’m still not over finding this 90s Leather Bomber — Black for just $75.00 on Depop. It’s got that perfectly broken-in leather and boxy fit that makes throwing together a 90s grunge or high-low streetwear look ridiculously easy. Run, don't walk, to grab this holy grail before I keep it for myself!
+  Fit card: I’m still not over finding this 90s Leather Bomber - Black for just $75.00 on Depop. It’s got that perfectly broken-in leather and boxy fit that makes throwing together a 90s grunge or high-low streetwear look ridiculously easy. Run, don't walk, to grab this holy grail before I keep it for myself!
 
 2 model calls this session, 774 prompt + 263 output tokens
 ```
 
-<!-- ═══════════════════════ UNIT 4 — THE TEST ═══════════════════════
+<!-- ═══════════════════════ UNIT 4 - THE TEST ═══════════════════════
 
      Don't fill these in during unit 3.
      ═══════════════════════════════════════════════════════════════════ -->
 
 ---
 
-## Run Log — Before
-
-<!-- Five criteria, five tries each, in this exact format.
-
-     Five, because your criteria are written out of five. Mark each try PASS
-     or FAIL, count the passes, and read that count against your target — a
-     row targeting 4 of 5 with three PASS cells is MISSED (3/5).
-
-     `python run_eval.py --label before` runs everything and writes the table
-     into results/. Paste it here and fill in the verdicts. -->
+## Run Log - Before
 
 **What this baseline measures.** The 5xx retry in `generate.py` was committed
 (`9771322`) before this formal baseline was run. It is the candidate for this
@@ -725,8 +716,9 @@ off, temperature 0.9). Raw output: `results/run_2026-10-13_1921_before.md`.
 It ran through a small wrapper kept outside the repo. The wrapper called
 `run_eval.main()` unchanged, added a pass-through recorder on
 `agent.suggest_outfit` to capture the exact `id` it received (criterion 3), and
-saved each session for scoring. 25 tries, 30 model calls. Every model-calling
-try produced different text, so the cache was not reusing answers.
+saved each session for scoring. 25 tries, 30 model calls. All 10 outfit
+suggestions and all 8 fit cards produced were different from each other, so the
+cache was not reusing answers.
 
 **Evaluation setup added in this milestone** (test harness only, not agent code):
 `scenarios.py` now has one scenario per criterion. Criterion 4 needs five
@@ -734,6 +726,8 @@ different listings, and a single query always selects the same listing, so that
 scenario lists five `queries`. `run_eval.py` runs `queries[k-1]` on try *k*. The
 five are `lst_005`, `lst_018`, `lst_028` (brand `None`) and `lst_024`
 (Ralph Lauren), `lst_004` (Champion), across depop, thredUp and poshmark.
+
+**Summary** (the run-log format the assignment asks for; details per try below):
 
 | Criterion | Target | Try 1 | Try 2 | Try 3 | Try 4 | Try 5 | Verdict |
 |---|---|---|---|---|---|---|---|
@@ -743,26 +737,108 @@ five are `lst_005`, `lst_018`, `lst_028` (brand `None`) and `lst_024`
 | 4. The fit card uses the real listing facts | 4 of 5 | FAIL | FAIL | FAIL | FAIL | FAIL | MISSED (0/5) |
 | 5. An empty wardrobe still gets a full run | 5 of 5 | FAIL | FAIL | FAIL | PASS | PASS | MISSED (2/5) |
 
-**How each try was scored** (criteria exactly as written in `criteria.md`):
+Each table below is one criterion. The quoted criterion is copied from
+`criteria.md`.
 
-1. PASS = no early stop, `suggest_outfit` was called, and a non-empty fit card came back.
-2. PASS = `session["error"]` set with a "Things to change" message, and `suggest_outfit` never called.
-3. PASS = the id recorded going into `suggest_outfit` equals `session["selected_item"]["id"]`
-   (`lst_013` = `lst_013` in all 5). In tries 1–2 the model then failed *inside*
-   `suggest_outfit`, but the right item had already been passed, which is what this
-   criterion checks.
-4. PASS = a fit card exists, is 2–4 sentences, contains the exact price and platform,
-   and has no "None" or invented brand. **No try produced a fit card**, so the
-   content checks were never reached in this baseline.
-5. PASS = non-empty outfit suggestion and fit card, and the suggestion names no
-   example-wardrobe item. Both passes (tries 4–5) were checked against all 10
-   example-wardrobe names: no match.
+#### Criterion 1 - A matching query completes all three tools (target: 4 of 5)
 
-**Every FAIL in this run is the same observed error.** All 12 failed tries
-(criterion 1 tries 4–5, criterion 4 tries 1–5, criterion 5 tries 1–3, plus the
-two in-`suggest_outfit` failures in criterion 3 tries 1–2, which still passed)
-stopped with `503 UNAVAILABLE ... This model is currently experiencing high
-demand`. None crashed. The diagnosis goes in Verdicts and Diagnoses (Milestone 4).
+> Given a query that matches at least one listing, the agent completes all three
+> tool calls and returns a fit card - in at least 4 of 5 tries.
+
+PASS = no early stop, `suggest_outfit` was called, and a non-empty fit card came back.
+
+| Try | Input | Result | Evidence |
+|---|---|---|---|
+| 1 | `vintage graphic tee under $30` | PASS | 10 results, selected `lst_002` (Y2K Baby Tee, $18, depop). All 7 steps ran, fit card returned (275 chars). |
+| 2 | `vintage graphic tee under $30` | PASS | Same item. All 7 steps ran, fit card returned (302 chars). |
+| 3 | `vintage graphic tee under $30` | PASS | Same item. All 7 steps ran, fit card returned (336 chars). |
+| 4 | `vintage graphic tee under $30` | FAIL | Same item. `503 UNAVAILABLE` during `suggest_outfit`. Stopped with "The model couldn't be reached". No fit card. |
+| 5 | `vintage graphic tee under $30` | FAIL | Same item. Outfit suggestion returned, then `503 UNAVAILABLE` during `create_fit_card`. No fit card. |
+
+**Result: 3 of 5 - MISSED** (target 4 of 5).
+
+#### Criterion 2 - An impossible query stops before the second tool (target: 5 of 5)
+
+> Given a query that matches no listings, the agent stops before calling
+> `suggest_outfit` and returns a message naming what to change - 5 of 5 tries.
+
+PASS = `session["error"]` set with a "Things to change" message, and `suggest_outfit` never called.
+
+| Try | Input | Result | Evidence |
+|---|---|---|---|
+| 1 | `designer ballgown size XXS under $5` | PASS | 0 results. Stopped at `[3] branch`. `suggest_outfit` not called. "Things to change" message returned. |
+| 2 | `designer ballgown size XXS under $5` | PASS | 0 results. Stopped at `[3] branch`. `suggest_outfit` not called. "Things to change" message returned. |
+| 3 | `designer ballgown size XXS under $5` | PASS | 0 results. Stopped at `[3] branch`. `suggest_outfit` not called. "Things to change" message returned. |
+| 4 | `designer ballgown size XXS under $5` | PASS | 0 results. Stopped at `[3] branch`. `suggest_outfit` not called. "Things to change" message returned. |
+| 5 | `designer ballgown size XXS under $5` | PASS | 0 results. Stopped at `[3] branch`. `suggest_outfit` not called. "Things to change" message returned. |
+
+**Result: 5 of 5 - MET** (target 5 of 5).
+
+#### Criterion 3 - The item passed on matches the item in the session (target: 5 of 5)
+
+> After a successful search, the id of the item given to suggest_outfit matches
+> the id of session["selected_item"] in 5 of 5 tries.
+
+PASS = the id recorded going into `suggest_outfit` equals `session["selected_item"]["id"]`.
+
+| Try | Input | Result | Evidence |
+|---|---|---|---|
+| 1 | `silk slip dress in midi length under $40` | PASS | `selected_item` = `lst_013`, passed to `suggest_outfit` = `lst_013`. The model then hit `503 UNAVAILABLE` inside `suggest_outfit`, after the item was passed. |
+| 2 | `silk slip dress in midi length under $40` | PASS | `lst_013` = `lst_013`. The model then hit `503 UNAVAILABLE` inside `suggest_outfit`, after the item was passed. |
+| 3 | `silk slip dress in midi length under $40` | PASS | `lst_013` = `lst_013`. Full run completed (fit card 307 chars). |
+| 4 | `silk slip dress in midi length under $40` | PASS | `lst_013` = `lst_013`. Full run completed (fit card 354 chars). |
+| 5 | `silk slip dress in midi length under $40` | PASS | `lst_013` = `lst_013`. Full run completed (fit card 340 chars). |
+
+**Result: 5 of 5 - MET** (target 5 of 5). Tries 1-2 still pass because this
+criterion checks which item was passed, and the right one was passed before the
+model failed.
+
+#### Criterion 4 - The fit card uses the real listing facts (target: 4 of 5)
+
+> For 5 different listings, including at least 2 where `brand` is `None`, each
+> fit card is 2-4 sentences, states that listing's exact price and platform, and
+> never shows the word "None" or names a brand the listing doesn't have - in at
+> least 4 of 5 cards.
+
+PASS = a fit card exists, is 2-4 sentences, contains the exact price and
+platform, and has no "None" or invented brand. Each try uses a different listing.
+
+| Try | Input (listing) | Result | Evidence |
+|---|---|---|---|
+| 1 | `corduroy wide-leg pants` (`lst_005`, brand `None`, $32, depop) | FAIL | `503 UNAVAILABLE` during `suggest_outfit`. No fit card. |
+| 2 | `vintage linen blazer` (`lst_018`, brand `None`, $38, thredUp) | FAIL | `503 UNAVAILABLE` during `suggest_outfit`. No fit card. |
+| 3 | `suede chelsea boots` (`lst_028`, brand `None`, $44, poshmark) | FAIL | `503 UNAVAILABLE` during `suggest_outfit`. No fit card. |
+| 4 | `vintage polo shirt` (`lst_024`, Ralph Lauren, $18, thredUp) | FAIL | `503 UNAVAILABLE` during `suggest_outfit`. No fit card. |
+| 5 | `90s track jacket` (`lst_004`, Champion, $45, poshmark) | FAIL | Outfit suggestion returned, then `503 UNAVAILABLE` during `create_fit_card`. No fit card. |
+
+**Result: 0 of 5 - MISSED** (target 4 of 5). No try produced a fit card, so the
+sentence, price, platform and brand checks were never reached in this baseline.
+
+#### Criterion 5 - An empty wardrobe still gets a full run (target: 5 of 5)
+
+> Given a matching query and `get_empty_wardrobe()`, the agent finishes with a
+> non-empty outfit suggestion and a fit card, and the suggestion doesn't name any
+> item from the example wardrobe (like "Chunky white sneakers") - 5 of 5 tries.
+
+PASS = non-empty outfit suggestion and fit card, and the suggestion names none
+of the 10 example-wardrobe items.
+
+| Try | Input | Result | Evidence |
+|---|---|---|---|
+| 1 | `denim jacket under $50`, empty wardrobe | FAIL | Selected `lst_007` (Wrangler denim jacket, $42, poshmark). `503 UNAVAILABLE` during `suggest_outfit`. No outfit or fit card. |
+| 2 | `denim jacket under $50`, empty wardrobe | FAIL | Same item. `503 UNAVAILABLE` during `suggest_outfit`. No outfit or fit card. |
+| 3 | `denim jacket under $50`, empty wardrobe | FAIL | Same item. `503 UNAVAILABLE` during `suggest_outfit`. No outfit or fit card. |
+| 4 | `denim jacket under $50`, empty wardrobe | PASS | Outfit suggestion and fit card returned (340 chars). No example-wardrobe item named. |
+| 5 | `denim jacket under $50`, empty wardrobe | PASS | Outfit suggestion and fit card returned (306 chars). No example-wardrobe item named. |
+
+**Result: 2 of 5 - MISSED** (target 5 of 5).
+
+**Every FAIL in this run is the same observed error.** All 10 FAIL cells
+(criterion 1 tries 4–5, criterion 4 tries 1–5, criterion 5 tries 1–3) stopped
+with `503 UNAVAILABLE ... This model is currently experiencing high demand`.
+The same error also hit criterion 3 tries 1–2, which still passed (see
+above), so 12 of the 25 tries hit it in total. None crashed. The diagnosis
+goes in Verdicts and Diagnoses (Milestone 4).
 
 **Real output, one try per criterion**
 
@@ -775,25 +851,25 @@ fit card from `tools.py::create_fit_card`:
       out: dict with keys: description, size, max_price
 [2] search_listings (via MCP)
       in:  dict with keys: description, size, max_price
-      out: 10 items: Y2K Baby Tee — Butterfly Print, Graphic Tee — 2003 Tour Bootleg Style, Vintage Band Tee — Faded Grey … +7 more
+      out: 10 items: Y2K Baby Tee - Butterfly Print, Graphic Tee - 2003 Tour Bootleg Style, Vintage Band Tee - Faded Grey … +7 more
       →    10 match(es)
 [3] select_item
-      out: Y2K Baby Tee — Butterfly Print ($18.0, depop)
+      out: Y2K Baby Tee - Butterfly Print ($18.0, depop)
 [4] compare_price
-      in:  Y2K Baby Tee — Butterfly Print ($18.0, depop)
+      in:  Y2K Baby Tee - Butterfly Print ($18.0, depop)
       out: dict with keys: category, price, typical_price, compared_with, verdict
       →    below typical
 [5] branch
       →    price is fine: no alternative needed
 [6] suggest_outfit
-      in:  Y2K Baby Tee — Butterfly Print ($18.0, depop)
-      out: Hey friend! That Y2K butterfly baby tee is an absolute score—fitted graphic baby tees are so much fun and supe…
+      in:  Y2K Baby Tee - Butterfly Print ($18.0, depop)
+      out: Hey friend! That Y2K butterfly baby tee is an absolute score-fitted graphic baby tees are so much fun and supe…
       →    10 wardrobe item(s)
 [7] create_fit_card
-      in:  Y2K Baby Tee — Butterfly Print ($18.0, depop)
-      out: Just scored the absolute dreamiest Y2K Baby Tee — Butterfly Print for only $18.00 on Depop! I am totally obses…
+      in:  Y2K Baby Tee - Butterfly Print ($18.0, depop)
+      out: Just scored the absolute dreamiest Y2K Baby Tee - Butterfly Print for only $18.00 on Depop! I am totally obses…
 
-Fit card: Just scored the absolute dreamiest Y2K Baby Tee — Butterfly Print for only $18.00 on Depop! I am totally obsessed with styling this sweet little graphic tee for an effortless mix of retro streetwear and grunge edge. Grab it now before I change my mind and keep it for myself!
+Fit card: Just scored the absolute dreamiest Y2K Baby Tee - Butterfly Print for only $18.00 on Depop! I am totally obsessed with styling this sweet little graphic tee for an effortless mix of retro streetwear and grunge edge. Grab it now before I change my mind and keep it for myself!
 ```
 
 Criterion 2, try 1. `session["error"]` from `agent.py::_nothing_found_message`.
@@ -801,7 +877,7 @@ The trace stops at `[3] branch → search returned []: stopping before suggest_o
 
 ```
 Nothing in the listings matched description 'designer ballgown', size XXS, under $5.
-Things to change: try broader words — 'jacket' finds more than 'cropped corduroy jacket'; drop the size, or try a neighbouring one; raise the price ceiling above $5.
+Things to change: try broader words - 'jacket' finds more than 'cropped corduroy jacket'; drop the size, or try a neighbouring one; raise the price ceiling above $5.
 ```
 
 Criterion 3, try 3. Trace from `agent.py::run_agent`. The selected item and the
@@ -810,11 +886,11 @@ Criterion 3, try 3. Trace from `agent.py::run_agent`. The selected item and the
 
 ```
 [3] select_item
-      out: 90s Silk Slip Dress — Floral, Midi Length ($30.0, depop)
+      out: 90s Silk Slip Dress - Floral, Midi Length ($30.0, depop)
 ...
 [6] suggest_outfit
-      in:  90s Silk Slip Dress — Floral, Midi Length ($30.0, depop)
-      out: Hey there! That 90s floral slip dress is an absolute goldmine—plus, a tiny side-seam snag is totally worth ove…
+      in:  90s Silk Slip Dress - Floral, Midi Length ($30.0, depop)
+      out: Hey there! That 90s floral slip dress is an absolute goldmine-plus, a tiny side-seam snag is totally worth ove…
       →    10 wardrobe item(s)
 ```
 
@@ -822,7 +898,7 @@ Criterion 4, try 1 (`corduroy wide-leg pants`, `lst_005`). `session["error"]`
 from the `ModelUnavailable` handler in `agent.py::run_agent`. No fit card:
 
 ```
-The model couldn't be reached, so the outfit and caption steps didn't run. The search worked — 5 listing(s) were found. Check GEMINI_API_KEY in your .env, then run the same query again.
+The model couldn't be reached, so the outfit and caption steps didn't run. The search worked - 5 listing(s) were found. Check GEMINI_API_KEY in your .env, then run the same query again.
 What the service said: Couldn't reach the model: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}
 ```
 
@@ -830,7 +906,7 @@ Criterion 5, try 4 (empty wardrobe). Suggestion from `tools.py::suggest_outfit`
 (trimmed), fit card from `tools.py::create_fit_card`:
 
 ```
-Outfit: Hey there! Oh, a cropped Wrangler jacket is an absolute thrift store holy grail—the structure on those vintage shoulders is unmatched!
+Outfit: Hey there! Oh, a cropped Wrangler jacket is an absolute thrift store holy grail-the structure on those vintage shoulders is unmatched!
 
 Here are two super easy ways to style it with things you probably already own:
 
@@ -839,7 +915,7 @@ Throw this jacket right over a fitted black ribbed tank top and your favorite st
 **2. Sweet Meets Street**
 ... tossing it over a simple black or olive green slip dress. Ground the outfit with chunky black boots or classic canvas sneakers ...
 
-Fit card: Nothing beats the structured shoulders on a vintage Wrangler Denim Jacket — Light Wash, Cropped, which gives off major off-duty model energy when thrown over a simple tank and straight-leg jeans. This versatile piece is a total blank canvas just waiting to be customized for your wardrobe. Snag it now for $42.00 over on my Poshmark closet!
+Fit card: Nothing beats the structured shoulders on a vintage Wrangler Denim Jacket - Light Wash, Cropped, which gives off major off-duty model energy when thrown over a simple tank and straight-leg jeans. This versatile piece is a total blank canvas just waiting to be customized for your wardrobe. Snag it now for $42.00 over on my Poshmark closet!
 ```
 
 **Aborted first attempt (disclosed, not counted).** An earlier start of this
@@ -855,8 +931,8 @@ were run with the same pre-retry `generate.py`. They are not in the table.
 <!-- MET or MISSED per criterion against LAST UNIT's target, plus a sentence on
      how you decided.
 
-     Then, for every miss: which of the four places it happened — a tool, the
-     loop's branch, the session, or the model's output — AND the mechanism.
+     Then, for every miss: which of the four places it happened - a tool, the
+     loop's branch, the session, or the model's output - AND the mechanism.
 
      Not a diagnosis:  "The fit card was bad."
      A diagnosis:      "The fit card criterion missed on 2 of 5 items. Both had
@@ -891,7 +967,7 @@ were run with the same pre-retry `generate.py`. They are not in the table.
 
      Worth pasting BOTH the happy path and the empty-search path. The empty
      one should be visibly shorter, because it stops. If your two traces are
-     the same length, your branch isn't working — and this is the fastest way
+     the same length, your branch isn't working - and this is the fastest way
      anyone will ever find that out. -->
 
 **Happy path**
@@ -903,25 +979,25 @@ $ python app.py ask 'vintage graphic tee under $30' --trace
       out: dict with keys: description, size, max_price
 [2] search_listings (via MCP)
       in:  dict with keys: description, size, max_price
-      out: 10 items: Y2K Baby Tee — Butterfly Print, Graphic Tee — 2003 Tour Bootleg Style, Vintage Band Tee — Faded Grey … +7 more
+      out: 10 items: Y2K Baby Tee - Butterfly Print, Graphic Tee - 2003 Tour Bootleg Style, Vintage Band Tee - Faded Grey … +7 more
       →    10 match(es)
 [3] select_item
-      out: Y2K Baby Tee — Butterfly Print ($18.0, depop)
+      out: Y2K Baby Tee - Butterfly Print ($18.0, depop)
 [4] compare_price
-      in:  Y2K Baby Tee — Butterfly Print ($18.0, depop)
+      in:  Y2K Baby Tee - Butterfly Print ($18.0, depop)
       out: dict with keys: category, price, typical_price, compared_with, verdict
       →    below typical
 [5] branch
       →    price is fine: no alternative needed
 [6] suggest_outfit
-      in:  Y2K Baby Tee — Butterfly Print ($18.0, depop)
+      in:  Y2K Baby Tee - Butterfly Print ($18.0, depop)
       out: Hey friend! That butterfly baby tee is a total Y2K dream, and since it runs a bit small, it’s going to give yo…
       →    10 wardrobe item(s)
 [7] create_fit_card
-      in:  Y2K Baby Tee — Butterfly Print ($18.0, depop)
-      out: Channel your inner early-2000s pop star with this Y2K Baby Tee — Butterfly Print, giving you that authentic fi…
+      in:  Y2K Baby Tee - Butterfly Print ($18.0, depop)
+      out: Channel your inner early-2000s pop star with this Y2K Baby Tee - Butterfly Print, giving you that authentic fi…
 
-  Found:    Y2K Baby Tee — Butterfly Print — $18.0 on depop
+  Found:    Y2K Baby Tee - Butterfly Print - $18.0 on depop
   [outfit and fit card text trimmed]
 
 0 model calls this session, 2 served from cache
@@ -942,7 +1018,7 @@ $ python app.py ask 'designer ballgown size XXS under $5' --trace
       →    search returned []: stopping before suggest_outfit
 
   Nothing in the listings matched description 'designer ballgown', size XXS, under $5.
-Things to change: try broader words — 'jacket' finds more than 'cropped corduroy jacket'; drop the size, or try a neighbouring one; raise the price ceiling above $5.
+Things to change: try broader words - 'jacket' finds more than 'cropped corduroy jacket'; drop the size, or try a neighbouring one; raise the price ceiling above $5.
 
 0 model calls this session
 ```
@@ -952,10 +1028,10 @@ the branch works. Step 2 in both is the MCP call.
 
 **On the MCP move:** <!-- what changed in your code, and whether anything
 behaved differently afterwards. If the rewire didn't work, say exactly where it
-broke — the error text and the last thing that worked. That earns the point in
+broke - the error text and the last thing that worked. That earns the point in
 full. -->
 
-**Milestone 1 — `search_listings` moved onto MCP (works).**
+### Milestone 1 - MCP Move: `search_listings` (works)
 
 - **Server (`mcp_server.py`):** registered `search_listings` with `@mcp.tool()`.
   Inputs match the Tool Inventory: `description: str` (required),
@@ -975,7 +1051,7 @@ full. -->
   Nothing changed shape going through MCP.
 - **End to end:** `python app.py ask 'vintage graphic tee under $30' --trace`
   ran all 7 steps. Step 2 was `search_listings (via MCP)` with 10 matches. It
-  picked *Y2K Baby Tee — Butterfly Print ($18.0, depop)*, then went through
+  picked *Y2K Baby Tee - Butterfly Print ($18.0, depop)*, then went through
   compare_price → suggest_outfit → create_fit_card. (The two model calls in this
   run were served from the build-mode cache.)
 - **Also fixed:** typos in the server's tool description. It had also claimed
@@ -985,11 +1061,10 @@ full. -->
   ("server and client both import") passes. The live **Model call** check fails
   with `ServerError: 503 UNAVAILABLE ... This model is currently experiencing
   high demand`. That is a temporary error on Google's side, and it failed again
-  on a second run.
+  on a second run. *Update:* a later `python test.py` run (during Milestone 2)
+  passed 10/10, so the 503 had cleared by then.
 
-
-
-### Milestone 2 — Failure Modes
+### Milestone 2 - Failure Modes
 
 I triggered each failure on purpose, one at a time. The handlers were already
 in place from unit 3 (`_nothing_found_message` and the `ModelUnavailable`
@@ -1008,7 +1083,7 @@ before `suggest_outfit`, with 0 model calls (full trace above). The agent said:
 
 ```
 Nothing in the listings matched description 'designer ballgown', size XXS, under $5.
-Things to change: try broader words — 'jacket' finds more than 'cropped corduroy jacket'; drop the size, or try a neighbouring one; raise the price ceiling above $5.
+Things to change: try broader words - 'jacket' finds more than 'cropped corduroy jacket'; drop the size, or try a neighbouring one; raise the price ceiling above $5.
 ```
 
 It names each constraint in play and how to loosen it. Suggestions only appear
@@ -1041,7 +1116,7 @@ no stack trace. Search and price check still ran, then the loop stopped:
 [6] model unavailable
       →    stopping, search results kept
 
-  The model couldn't be reached, so the outfit and caption steps didn't run. The search worked — 7 listing(s) were found. Check GEMINI_API_KEY in your .env, then run the same query again.
+  The model couldn't be reached, so the outfit and caption steps didn't run. The search worked - 7 listing(s) were found. Check GEMINI_API_KEY in your .env, then run the same query again.
 What the service said: The model rejected your API key. Check GEMINI_API_KEY in your .env file, or create a fresh key at aistudio.google.com.
 
 1 model calls this session
@@ -1066,7 +1141,7 @@ model. A query has to reach `suggest_outfit` to test this failure.
 
 **Which failure it was meant to fix:**
 
-### Run Log — After
+### Run Log - After
 
 | Criterion | Target | Try 1 | Try 2 | Try 3 | Try 4 | Try 5 | Verdict |
 |---|---|---|---|---|---|---|---|
@@ -1095,7 +1170,7 @@ model. A query has to reach `suggest_outfit` to test this failure.
 
 <!-- ═════════════════════════════════════════════════════════════════════
 
-     SUBMISSION CHECKLIST — unit 3
+     SUBMISSION CHECKLIST - unit 3
 
        [ ] criteria.md has five numbered criteria, each with a target
        [ ] Each criterion has a reason underneath it
@@ -1105,20 +1180,20 @@ model. A query has to reach `suggest_outfit` to test this failure.
        [ ] Planning Loop names the branch rule and agent.py::run_agent
        [ ] Sample Run: one full query plus the three per-tool tests, as text
        [ ] At least four new commits
-       [ ] Repository URL submitted — WRITE IT DOWN, you submit the same one
+       [ ] Repository URL submitted - WRITE IT DOWN, you submit the same one
            next unit
 
-     SUBMISSION CHECKLIST — unit 4
+     SUBMISSION CHECKLIST - unit 4
 
        [ ] mcp_server.py exists with one tool registered
            (or a written record of exactly where the rewire broke)
-       [ ] Run Log — Before, five criteria, five tries each
+       [ ] Run Log - Before, five criteria, five tries each
        [ ] Real output pasted underneath, naming file and function
        [ ] A verdict on every criterion
        [ ] A diagnosis for every miss, naming a place AND a mechanism
        [ ] Loop Trace, with the MCP call visible in it
        [ ] All three failure modes triggered and handled
-       [ ] One improvement, with Run Log — After in the same format
+       [ ] One improvement, with Run Log - After in the same format
        [ ] What's Still Broken
        [ ] At least four new commits
        [ ] The SAME repository URL as last unit
