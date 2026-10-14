@@ -1161,31 +1161,221 @@ model. A query has to reach `suggest_outfit` to test this failure.
 
 ## The Improvement
 
-<!-- What you changed, why your diagnosis pointed at it, and the after-run in
-     the same table format. One change, measured properly.
+**What I changed:** `generate.py`, commit `9771322`. One change: `generate()`
+now retries a temporary server-side error (HTTP 500/502/503/504, or "503" in
+the message) up to 3 attempts in total. It waits about 2 s, then about 4 s,
+plus 0-1 s of random jitter, and prints `[server busy] ... Retrying in Ns`
+before each wait. If all 3 attempts fail, it raises `ModelUnavailable` with a
+message that says the service is overloaded. Before this change, a 503 matched
+none of the rate-limit checks and raised `ModelUnavailable` on the first
+attempt (see Verdicts and Diagnoses). Nothing else changed:
+`git diff 760370b 9771322` touches only `generate.py`, and both runs used the
+same `scenarios.py`, `run_eval.py`, criteria, 5 tries, cache off and
+temperature 0.9.
 
-     `python run_eval.py --label after` -->
+**Which failure it was meant to fix:** the one mechanism behind all three
+baseline misses (criteria 1, 4 and 5). A Gemini `503 UNAVAILABLE` from
+`suggest_outfit` or `create_fit_card` ended the run with no retry. That hit 12
+of 25 baseline tries.
 
-**What I changed:**
-
-**Which failure it was meant to fix:**
+**How it was run.** `run_eval.py --label after` on the committed
+`generate.py` (HEAD, retry version), through the same wrapper as the baseline
+(it records the id passed to `suggest_outfit` for criterion 3). Raw output:
+`results/run_2026-10-13_1949_after.md`. 25 tries, 40 model calls, no crashes.
+The console showed three normal rate-limit pauses (`[rate limit] 15 requests
+used this minute. Waiting ...`) and **no `[server busy]` lines**.
 
 ### Run Log - After
 
+**Summary**, in the same format as the baseline:
+
 | Criterion | Target | Try 1 | Try 2 | Try 3 | Try 4 | Try 5 | Verdict |
 |---|---|---|---|---|---|---|---|
-| 1.  |  |  |  |  |  |  |  |
-| 2.  |  |  |  |  |  |  |  |
-| 3.  |  |  |  |  |  |  |  |
-| 4.  |  |  |  |  |  |  |  |
-| 5.  |  |  |  |  |  |  |  |
+| 1. A matching query completes all three tools | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 2. An impossible query stops before the second tool | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 3. Item id passed to `suggest_outfit` matches `session["selected_item"]` | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 4. The fit card uses the real listing facts | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 5. An empty wardrobe still gets a full run | 5 of 5 | FAIL | PASS | PASS | PASS | FAIL | MISSED (3/5) |
 
-**Did it help, and how do I know:**
+Scoring rules are the same as the baseline's (see Run Log - Before).
 
-<!-- If it made things worse, say that. Honestly reported, that earns full
-     credit and is more interesting than one that worked. -->
+#### Criterion 1 - A matching query completes all three tools (target: 4 of 5)
 
+| Try | Input | Result | Evidence |
+|---|---|---|---|
+| 1 | `vintage graphic tee under $30` | PASS | 10 results, selected `lst_002` (Y2K Baby Tee, $18, depop). All 7 steps ran, fit card returned (383 chars). |
+| 2 | `vintage graphic tee under $30` | PASS | Same item. All 7 steps ran, fit card returned (409 chars). |
+| 3 | `vintage graphic tee under $30` | PASS | Same item. All 7 steps ran, fit card returned (310 chars). |
+| 4 | `vintage graphic tee under $30` | PASS | Same item. All 7 steps ran, fit card returned (419 chars). |
+| 5 | `vintage graphic tee under $30` | PASS | Same item. All 7 steps ran, fit card returned (285 chars). |
 
+**Result: 5 of 5 - MET** (target 4 of 5).
+
+#### Criterion 2 - An impossible query stops before the second tool (target: 5 of 5)
+
+| Try | Input | Result | Evidence |
+|---|---|---|---|
+| 1 | `designer ballgown size XXS under $5` | PASS | 0 results. Stopped at `[3] branch`. `suggest_outfit` not called. "Things to change" message returned. |
+| 2 | `designer ballgown size XXS under $5` | PASS | 0 results. Stopped at `[3] branch`. `suggest_outfit` not called. "Things to change" message returned. |
+| 3 | `designer ballgown size XXS under $5` | PASS | 0 results. Stopped at `[3] branch`. `suggest_outfit` not called. "Things to change" message returned. |
+| 4 | `designer ballgown size XXS under $5` | PASS | 0 results. Stopped at `[3] branch`. `suggest_outfit` not called. "Things to change" message returned. |
+| 5 | `designer ballgown size XXS under $5` | PASS | 0 results. Stopped at `[3] branch`. `suggest_outfit` not called. "Things to change" message returned. |
+
+**Result: 5 of 5 - MET** (target 5 of 5).
+
+#### Criterion 3 - The item passed on matches the item in the session (target: 5 of 5)
+
+| Try | Input | Result | Evidence |
+|---|---|---|---|
+| 1 | `silk slip dress in midi length under $40` | PASS | `selected_item` = `lst_013`, passed to `suggest_outfit` = `lst_013`. Full run completed (fit card 267 chars). |
+| 2 | `silk slip dress in midi length under $40` | PASS | `lst_013` = `lst_013`. Full run completed (fit card 359 chars). |
+| 3 | `silk slip dress in midi length under $40` | PASS | `lst_013` = `lst_013`. Full run completed (fit card 240 chars). |
+| 4 | `silk slip dress in midi length under $40` | PASS | `lst_013` = `lst_013`. Full run completed (fit card 304 chars). |
+| 5 | `silk slip dress in midi length under $40` | PASS | `lst_013` = `lst_013`. Full run completed (fit card 324 chars). |
+
+**Result: 5 of 5 - MET** (target 5 of 5).
+
+#### Criterion 4 - The fit card uses the real listing facts (target: 4 of 5)
+
+Each card was checked by script and then read by hand.
+
+| Try | Input (listing) | Result | Evidence |
+|---|---|---|---|
+| 1 | `corduroy wide-leg pants` (`lst_005`, brand `None`, $32, depop) | PASS | 3 sentences. "$32.00" and "depop" present. No "None", no brand named. |
+| 2 | `vintage linen blazer` (`lst_018`, brand `None`, $38, thredUp) | PASS | 2 sentences. "$38.00" and "thredUp" present. No "None", no brand named. |
+| 3 | `suede chelsea boots` (`lst_028`, brand `None`, $44, poshmark) | PASS | 3 sentences. "$44.00" and "Poshmark" present. No "None", no brand named. |
+| 4 | `vintage polo shirt` (`lst_024`, Ralph Lauren, $18, thredUp) | PASS | 3 sentences. "$18.00" and "thredUp" present. Names only its own brand, Ralph Lauren. |
+| 5 | `90s track jacket` (`lst_004`, Champion, $45, poshmark) | PASS | 3 sentences. "$45.00" and "Poshmark" present. Names only its own brand, Champion. |
+
+**Result: 5 of 5 - MET** (target 4 of 5). This is the first run where the
+criterion's content checks were actually reached.
+
+#### Criterion 5 - An empty wardrobe still gets a full run (target: 5 of 5)
+
+| Try | Input | Result | Evidence |
+|---|---|---|---|
+| 1 | `denim jacket under $50`, empty wardrobe | FAIL | Outfit and fit card returned (fit card 362 chars), but the suggestion says "Finish it off with chunky white sneakers", the exact name of example-wardrobe item `w_007` ("Chunky white sneakers"). |
+| 2 | `denim jacket under $50`, empty wardrobe | PASS | Outfit and fit card returned (279 chars). No example-wardrobe item named. |
+| 3 | `denim jacket under $50`, empty wardrobe | PASS | Outfit and fit card returned (336 chars). No example-wardrobe item named. |
+| 4 | `denim jacket under $50`, empty wardrobe | PASS | Outfit and fit card returned (274 chars). No example-wardrobe item named. |
+| 5 | `denim jacket under $50`, empty wardrobe | FAIL | Outfit and fit card returned (357 chars), but the suggestion again says "Finish it off with chunky white sneakers". |
+
+**Result: 3 of 5 - MISSED** (target 5 of 5).
+
+**Real output from the after-run** (model text copied from
+`results/run_2026-10-13_1949_after.md`; em dashes in titles shown as hyphens)
+
+Criterion 1, try 1. Fit card from `tools.py::create_fit_card`:
+
+```
+Channel your inner early-2000s pop star with this gorgeous Y2K Baby Tee - Butterfly Print, featuring the dreamiest pastel graphics. I'm totally obsessed with styling it either oversized with baggy jeans for a casual streetwear vibe or toughened up with combat boots for some edgy contrast. Snag this little wardrobe staple right now on depop for just $18.00 before someone else does!
+```
+
+Criterion 2, try 1. `session["error"]` from `agent.py::_nothing_found_message`:
+
+```
+Nothing in the listings matched description 'designer ballgown', size XXS, under $5.
+Things to change: try broader words - 'jacket' finds more than 'cropped corduroy jacket'; drop the size, or try a neighbouring one; raise the price ceiling above $5.
+```
+
+Criterion 3, try 1. Trace from `agent.py::run_agent` (recorded ids: `lst_013` = `lst_013`):
+
+```
+[3] select_item
+      out: 90s Silk Slip Dress - Floral, Midi Length ($30.0, depop)
+...
+[6] suggest_outfit
+      in:  90s Silk Slip Dress - Floral, Midi Length ($30.0, depop)
+      out: Hey there! That 90s floral silk slip dress is an absolute goldmine-and don't sweat that little side seam snag,…
+      →    10 wardrobe item(s)
+```
+
+Criterion 4, all five cards. From `tools.py::create_fit_card`, one per listing:
+
+```
+lst_005: Channel your inner 70s icon with these dreamy Corduroy Wide-Leg Pants in rust, giving major cozy autumn vibes. Just $32.00 on depop, they pair effortlessly with your favorite basics for either an edgy coffee run look or a slouchy, laid-back weekend fit. Snag them now before someone else beats you to it!
+
+lst_018: Scored this dreamy Vintage Linen Blazer on thredUp for just $38.00, and it is the ultimate transitional layering piece. Whether you're throwing it over baggy denim and chunky sneakers for a cool streetwear contrast or pairing it with khaki trousers for a minimal tonal look, the relaxed fit brings instant effortless style.
+
+lst_028: Give your wardrobe an instant vintage vibe with these Tan Suede Chelsea Boots, listed on Poshmark for just $44.00! Style them with baggy dark-wash denim and a black denim jacket for an effortless streetwear look, or lean into cozy earth tones with wide-leg trousers and a slouchy crewneck. They are a timeless staple, and any minor scuffing easily buffs right out with a little TLC.
+
+lst_024: Scored this dreamy Vintage Polo Shirt - Forest Green from Ralph Lauren on thredUp for just $18.00, and I am obsessed with the boxy 90s fit! Whether you're leaning into casual streetwear with baggy denim or keeping it earthy and relaxed with wide-leg trousers, this rich tone goes with literally everything. Which vibe are you wearing first?
+
+lst_004: Scored this authentic Champion 90s Track Jacket - Navy/White Stripe for just $45.00 over on Poshmark, and it brings the ultimate retro streetwear vibe to any outfit. I love layering it open over a white tank with baggy denim or wide-leg khakis for that effortless, high-low look you'll reach for constantly. Grab it before it's gone!
+```
+
+Criterion 5, try 1 (a FAIL). Suggestion from `tools.py::suggest_outfit`, empty wardrobe:
+
+```
+Hey there! Oh, a cropped Wrangler jacket is an absolute thrift-store holy grail-the structured shoulders give it such a cool, vintage shape.
+
+Here are two super easy ways to style it with things you probably already own:
+
+**1. The Off-Duty Model Look**
+Throw this jacket right over a simple white crop top or basic tee, and pair it with your favorite high-waisted black leggings or biker shorts. Finish it off with chunky white sneakers and a baseball cap for a comfy, effortless weekend vibe.
+
+**2. The Elevated Casual**
+Layer it over a plain black or grey hoodie (letting the hood hang out the back) and pair it with straight-leg trousers or wide-leg cargo pants. Step into some classic canvas sneakers or retro runners, and you've got an instant streetwear look that's equal parts cozy and cool.
+```
+
+### Before and after
+
+| Criterion | Target | Before | After | Change |
+|---|---|---|---|---|
+| 1. A matching query completes all three tools | 4 of 5 | MISSED (3/5) | MET (5/5) | +2 |
+| 2. An impossible query stops before the second tool | 5 of 5 | MET (5/5) | MET (5/5) | none |
+| 3. Item id passed to `suggest_outfit` matches `session["selected_item"]` | 5 of 5 | MET (5/5) | MET (5/5) | none |
+| 4. The fit card uses the real listing facts | 4 of 5 | MISSED (0/5) | MET (5/5) | +5 |
+| 5. An empty wardrobe still gets a full run | 5 of 5 | MISSED (2/5) | MISSED (3/5) | +1 |
+| **All tries** | | **15/25 PASS, 2 of 5 criteria met** | **23/25 PASS, 4 of 5 criteria met** | **+8** |
+| Tries that hit a model error (503) | | 12/25 | 0/25 | |
+
+**Did it help, and how do I know:** The results are much better, but this run
+**does not show that the retry caused it.** The retry never ran during the
+after-run:
+- There were no `[server busy]` lines.
+- There is no 503 anywhere in `results/run_2026-10-13_1949_after.md`.
+- There were 40 model calls, exactly 2 per model-calling try (20 tries), so
+  no call was retried.
+
+The 503s that broke 12 of 25 baseline tries simply did not happen this time.
+So the before/after difference measures **the model service being available**,
+not the retry. Because the retry branch never ran, the code that actually
+executed in this run behaved the same as the pre-retry version, so this run
+cannot tell the two apart.
+
+What the after-run does show:
+
+- **When the model responds, criteria 1, 3 and 4 meet their targets.** In
+  particular, criterion 4's content checks ran for the first time and all five
+  cards passed. That includes the three no-brand listings, where no brand was
+  invented and "None" never appeared. This is new evidence that the baseline
+  could not give.
+- **Criterion 2 is unchanged at 5/5.** It makes no model calls, so neither the
+  503s nor the retry could affect it.
+- **Criterion 5 still missed, for a different reason.** Both FAILs are model
+  output, not errors. The empty-wardrobe prompt (`tools.py::suggest_outfit`,
+  lines 197-204) asks for "common, easy-to-find pieces (e.g. basic jeans, a
+  plain white tee, simple sneakers)", and in 2 of 5 tries the model chose
+  "chunky white sneakers". That phrase is exactly the name of example-wardrobe
+  item `w_007`, which is the example the criterion itself gives. The model
+  never saw the example wardrobe (it was empty), so this is a common styling
+  phrase colliding with the check, not the tool leaking wardrobe data. The
+  criterion as written still counts it as a FAIL, and I have kept that verdict
+  rather than loosening the check. The baseline's two passes had near misses
+  ("chunky black boots", "white canvas sneakers"), so this didn't come from
+  nowhere. Five tries were too few to see it before.
+
+The only direct evidence that the retry works is from outside this
+measurement: in Milestone 2's empty-wardrobe run, the retry version printed
+`[server busy] ... Retrying in 2s` and `... Retrying in 5s`, then completed
+(5 model calls for one run). That shows the retry can recover. It does not
+measure how often, so I am not counting it as a result.
+
+**In one sentence:** the after-run met 4 of 5 criteria (up from 2), but no
+503s occurred, so it does not demonstrate that the retry fixed the baseline
+misses. Criterion 5 still misses, now because of the model's wording, not
+model errors.
 
 ---
 
