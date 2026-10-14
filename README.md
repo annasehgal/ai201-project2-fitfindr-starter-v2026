@@ -526,16 +526,16 @@ off.
   any code.
 - *What came back:* Claude wrote the change in `agent.py` and `app.py` and
   the tests in `test_search_retry.py`. Its first commit attempt stalled on my
-  signed-commit setup, so I make the commits myself.
+  signed-commit setup, so I made the commits myself.
 - *What I changed or checked:* I noticed that `app.py` printed the size notice
   only in the success branch. In the failure case the notice reached the user
   only because it was embedded in the error text. I had the notice printed in
   both branches, with the error kept to the not-found message and its
-  recovery steps. I also had tests added that check the actual CLI output for
-  both outcomes. I also
-  asked for the retry step in the trace to show its real inputs. Because those
-  fixes changed user-facing output, the stretch evaluation was run again on
-  the final code. The earlier run is kept and labelled as superseded.
+  recovery steps. I had tests added that check the actual CLI output for both
+  outcomes, and asked for the retry step in the trace to show its real inputs.
+  Because those fixes changed user-facing output, the stretch evaluation was
+  run again on the final code. The earlier run is kept and labelled as
+  superseded.
 
 ---
 
@@ -1175,9 +1175,11 @@ Things to change: try broader words - 'jacket' finds more than 'cropped corduroy
 `mcp_client.call_tool("search_listings", {...})` instead of calling the
 function directly. The search code itself, the other two tools and the loop
 are unchanged. The data did not change: the MCP call returned the same
-`list[dict]` as the direct call for the three queries I compared, and both
-traces above show the same steps as before, with step 2 now labelled
-`search_listings (via MCP)`. Two things are different in practice:
+`list[dict]` as the direct call for the three queries I compared, and the two
+Milestone 2 traces above show the same steps as before, with step 2 now
+labelled `search_listings (via MCP)`. (The extra step in the size-retry trace
+comes from the later stretch feature, not the MCP move.) Two things are
+different in practice:
 - Each call starts the server and stops it again (that's how `mcp_client.py`
   works).
 - A broken MCP call now raises `MCPError`, which `run_agent` does not catch.
@@ -1636,7 +1638,10 @@ Planned behavior, in `agent.py::run_agent`:
   as before. There is only one retry.
 - If the query has no size, there is nothing to drop, so there is no retry.
 
-Status: implemented. The code, tests and evaluation are below.
+- **Status when declared:** declared, not implemented. That version of this
+  section was committed on its own (`18a5acb`), before the code.
+- **Status now:** implemented in `83dc151`. The code, tests and evaluation are
+  described below.
 
 **Why this one.** Unit 3's empty-search message already told users to "drop
 the size, or try a neighbouring one". This feature does that once
