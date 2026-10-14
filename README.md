@@ -774,14 +774,58 @@ that produced it:
 **Happy path**
 
 ```
+$ python app.py ask 'vintage graphic tee under $30' --trace
+[1] parse_query
+      in:  vintage graphic tee under $30
+      out: dict with keys: description, size, max_price
+[2] search_listings (via MCP)
+      in:  dict with keys: description, size, max_price
+      out: 10 items: Y2K Baby Tee — Butterfly Print, Graphic Tee — 2003 Tour Bootleg Style, Vintage Band Tee — Faded Grey … +7 more
+      →    10 match(es)
+[3] select_item
+      out: Y2K Baby Tee — Butterfly Print ($18.0, depop)
+[4] compare_price
+      in:  Y2K Baby Tee — Butterfly Print ($18.0, depop)
+      out: dict with keys: category, price, typical_price, compared_with, verdict
+      →    below typical
+[5] branch
+      →    price is fine: no alternative needed
+[6] suggest_outfit
+      in:  Y2K Baby Tee — Butterfly Print ($18.0, depop)
+      out: Hey friend! That butterfly baby tee is a total Y2K dream, and since it runs a bit small, it’s going to give yo…
+      →    10 wardrobe item(s)
+[7] create_fit_card
+      in:  Y2K Baby Tee — Butterfly Print ($18.0, depop)
+      out: Channel your inner early-2000s pop star with this Y2K Baby Tee — Butterfly Print, giving you that authentic fi…
 
+  Found:    Y2K Baby Tee — Butterfly Print — $18.0 on depop
+  [outfit and fit card text trimmed]
+
+0 model calls this session, 2 served from cache
 ```
 
 **Empty search**
 
 ```
+$ python app.py ask 'designer ballgown size XXS under $5' --trace
+[1] parse_query
+      in:  designer ballgown size XXS under $5
+      out: dict with keys: description, size, max_price
+[2] search_listings (via MCP)
+      in:  dict with keys: description, size, max_price
+      out: [] (empty)
+      →    0 match(es)
+[3] branch
+      →    search returned []: stopping before suggest_outfit
 
+  Nothing in the listings matched description 'designer ballgown', size XXS, under $5.
+Things to change: try broader words — 'jacket' finds more than 'cropped corduroy jacket'; drop the size, or try a neighbouring one; raise the price ceiling above $5.
+
+0 model calls this session
 ```
+
+The empty-search trace stops at step 3 and the happy path runs to step 7, so
+the branch works. Step 2 in both is the MCP call.
 
 **On the MCP move:** <!-- what changed in your code, and whether anything
 behaved differently afterwards. If the rewire didn't work, say exactly where it
@@ -821,6 +865,70 @@ full. -->
   on a second run.
 
 
+
+### Milestone 2 — Failure Modes
+
+I triggered each failure on purpose, one at a time. The handlers were already
+in place from unit 3 (`_nothing_found_message` and the `ModelUnavailable`
+handler in `agent.py`, and the empty-wardrobe path in `tools.suggest_outfit`).
+None of the three crashed or went silent, so **no code was changed for this
+milestone.**
+
+| # | Failure | How I triggered it | Result |
+|---|---|---|---|
+| 1 | Empty search | `python app.py ask 'designer ballgown size XXS under $5' --trace` | **PASS** |
+| 2 | Empty wardrobe | `python app.py ask 'denim jacket under $50' --empty-wardrobe --trace` | **PASS** |
+| 3 | Model unavailable | Changed the last character of `GEMINI_API_KEY` in `.env`, ran `python app.py ask 'oversized flannel shirt for fall' --trace` (a query not run before), then restored the original key (checksum-verified) | **PASS** |
+
+**1. Empty search:** search returned `[]` over MCP and the branch stopped
+before `suggest_outfit`, with 0 model calls (full trace above). The agent said:
+
+```
+Nothing in the listings matched description 'designer ballgown', size XXS, under $5.
+Things to change: try broader words — 'jacket' finds more than 'cropped corduroy jacket'; drop the size, or try a neighbouring one; raise the price ceiling above $5.
+```
+
+It names each constraint in play and how to loosen it. Suggestions only appear
+for constraints the user set: a query with no size or price (e.g. `'striped
+wool scarf for winter'`) only gets "try broader words".
+
+**2. Empty wardrobe:** the CLI printed `(running with an empty wardrobe)`, and
+`suggest_outfit` ran with `0 wardrobe item(s)`. It returned general advice,
+not a crash or an empty string (5 live model calls, including retries after
+503 "server busy" errors, which the retry handling recovered from). The start
+of the output:
+
+```
+Outfit:   Ooh, a vintage Wrangler cropped jacket is such a wardrobe MVP! Since I don't know your closet yet, here are two super easy ways to style it using basics you probably already own:
+
+**1. The Off-Duty Casual Look**
+Throw it on over a plain white crewneck tee and your favorite black leggings or straight-leg jeans. ...
+```
+
+The fit card was produced as well. Note: the "I don't know your closet yet"
+wording comes from the model, not a fixed message, so it may vary between runs.
+The empty-wardrobe prompt branch in `tools.suggest_outfit` is what asks for
+general advice. (Style memory is off by default, `AI201_MEMORY=0`, so no saved
+wardrobe was swapped in.)
+
+**3. Model unavailable:** the run finished in about 2 seconds, with no hang and
+no stack trace. Search and price check still ran, then the loop stopped:
+
+```
+[6] model unavailable
+      →    stopping, search results kept
+
+  The model couldn't be reached, so the outfit and caption steps didn't run. The search worked — 7 listing(s) were found. Check GEMINI_API_KEY in your .env, then run the same query again.
+What the service said: The model rejected your API key. Check GEMINI_API_KEY in your .env file, or create a fresh key at aistudio.google.com.
+
+1 model calls this session
+```
+
+It says what broke (the model rejected the key), what still worked (the search)
+and what to do (check or replace the key, then re-run). The key never appears
+in the output. My first attempt used `'striped wool scarf for winter'`, which
+matched no listings, so it took the empty-search branch and never called the
+model. A query has to reach `suggest_outfit` to test this failure.
 
 ---
 
