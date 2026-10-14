@@ -171,6 +171,50 @@ to change: broader words, a different size, or a higher price.
 - **When it has nothing:** Returns an empty list `[]`, never `None` and never
   an exception. The planning loop branches on this.
 
+#### MCP contract: `search_listings`
+
+Derived from `mcp_server.py`, `tools.search_listings`, and `data/listings.json`.
+The agent calls it with `call_tool("search_listings", {...})` from `mcp_client.py`.
+
+- **Tool name:** `search_listings` (FastMCP registers the function name).
+  Any other name, such as `search_listing`, fails with `MCPError`.
+- **Arguments:**
+  - `description` (string, **required**): free-text keywords. It is lowercased,
+    split into words, and common stopwords plus one-letter words are dropped.
+    A listing is returned only if it shares at least one remaining word with its
+    `title`, `description`, `category`, `style_tags`, `colors` or `brand`.
+    Matching is on exact whole words, with no stemming, so `"tees"` does not match `"tee"`.
+    If nothing is left after stopwords are removed (e.g. `"the a"`), the result is `[]`.
+  - `size` (string or null, optional, default null): null or `""` turns off the
+    size filter. The match is case-insensitive. The listing's size has
+    parentheticals removed and is split on `/`, and the request must equal one
+    of those parts. So `"M"` matches `"M"`, `"S/M"` and `"M/L"`, but not `"XL"`.
+    Listings whose size starts with `One Size` match any request.
+    Sizes in the data: `S`, `M`, `L`, `XL`, `S/M`, `M/L`, `L/XL`,
+    `US 7`/`8`/`8.5`/`9`, `W27`–`W32`, `W30 L30`, `One Size` variants.
+    ⚠️ `"W30"` does not match `"W30 L30"`, and `"US9"` does not match `"US 9"`.
+    The tool does not reject unknown sizes. They just match nothing.
+  - `max_price` (number or null, optional, default null): price ceiling in the
+    listing's `price` units, inclusive (`price <= max_price`). Null turns off the filter.
+    ⚠️ The code and data don't name a currency. The `$` comes from user queries
+    and from the server docstring, so read it as dollars. Data prices range $12–$75.
+- **Returns:** a JSON array of at most `config.SEARCH_RESULT_LIMIT` (10) listing
+  objects, sorted by keyword-overlap count, highest first. Ties stay in
+  `listings.json` order. They are **not** sorted by price. Each object is the
+  listing unchanged: `id` (str), `title` (str), `description` (str), `category`
+  (str: tops/bottoms/outerwear/shoes/accessories), `style_tags` (list[str]),
+  `size` (str), `condition` (str: excellent/good/fair), `price` (float),
+  `colors` (list[str]), `brand` (str or null, null for 32 of 40), `platform` (str).
+  Over MCP, `call_tool` returns the same `list[dict]` as calling the function
+  directly (checked: same output for `"graphic tee"`, `"M"`, `30`).
+- **Empty results:** `[]`, never null and never an error. The agent sets
+  `session["error"]` and stops before `suggest_outfit`.
+- **Errors:** the tool itself does not raise for bad matches. A wrong tool name,
+  a missing `description`, a wrongly typed argument (e.g. `max_price: "cheap"`),
+  or a server that won't start makes `call_tool` raise `MCPError`. The message
+  is currently a generic "unhandled errors in a TaskGroup" wrapper, not the
+  specific cause. `run_agent` does not catch `MCPError`, so it reaches the caller.
+
 ### `suggest_outfit`
 
 - **What it does:** Uses the model to suggest one or two outfits built around
@@ -743,6 +787,38 @@ that produced it:
 behaved differently afterwards. If the rewire didn't work, say exactly where it
 broke — the error text and the last thing that worked. That earns the point in
 full. -->
+
+**Milestone 1 — `search_listings` moved onto MCP (works).**
+
+- **Server (`mcp_server.py`):** registered `search_listings` with `@mcp.tool()`.
+  Inputs match the Tool Inventory: `description: str` (required),
+  `size: str | None = None`, `max_price: float | None = None`. The tool
+  description states units (dollars, inclusive), the size-matching rule, the
+  returned fields, and that nothing found means `[]`. It delegates to
+  `tools.search_listings`, so the search logic is unchanged.
+- **Agent (`agent.py`):** `run_agent()` no longer calls `search_listings(...)`
+  directly. It calls `call_tool("search_listings", {...})` from `mcp_client.py`
+  and logs the step as `search_listings (via MCP)`. The other tools are still
+  called directly.
+- **`python mcp_client.py`:** lists `search_listings` with
+  `description: string`, `size: string (optional)`, `max_price: number (optional)`.
+- **Same return value:** the direct call and the MCP call returned equal
+  `list[dict]` results (`==` is `True`) for `"vintage graphic tee"` / `max_price=30.0`
+  (10 results), `"graphic tee"` / `"M"` / `30` (2 results) and `"zzzz"` (`[]`).
+  Nothing changed shape going through MCP.
+- **End to end:** `python app.py ask 'vintage graphic tee under $30' --trace`
+  ran all 7 steps. Step 2 was `search_listings (via MCP)` with 10 matches. It
+  picked *Y2K Baby Tee — Butterfly Print ($18.0, depop)*, then went through
+  compare_price → suggest_outfit → create_fit_card. (The two model calls in this
+  run were served from the build-mode cache.)
+- **Also fixed:** typos in the server's tool description. It had also claimed
+  ties were sorted "cheaper first". `tools.search_listings` sorts only by
+  keyword score, so ties keep catalog order, and the description now says that.
+- **Not MCP-related, still open:** `python test.py` passes 9/10. The MCP check
+  ("server and client both import") passes. The live **Model call** check fails
+  with `ServerError: 503 UNAVAILABLE ... This model is currently experiencing
+  high demand`. That is a temporary error on Google's side, and it failed again
+  on a second run.
 
 
 

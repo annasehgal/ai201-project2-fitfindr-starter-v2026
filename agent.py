@@ -8,7 +8,7 @@ from generate import ModelUnavailable
 # Extra credit: fourth tool and style memory.
 from tools import compare_price
 from utils.style_memory import load_wardrobe, save_wardrobe
-
+from mcp_client import call_tool
 
 # ── session state ─────────────────────────────────────────────────────────────
 
@@ -162,16 +162,22 @@ def run_agent(query: str, wardrobe: dict) -> dict:
         # )
 
         # UNIT 3:
-        session["search_results"] = search_listings(
-            session["parsed"]["description"],
-            session["parsed"]["size"],
-            session["parsed"]["max_price"],
-        )
+        # session["search_results"] = search_listings(
+        #     session["parsed"]["description"],
+        #     session["parsed"]["size"],
+        #     session["parsed"]["max_price"],
+        # )
+        results = call_tool("search_listings", {
+            "description": parsed["description"],
+            "size": parsed["size"],
+            "max_price": parsed["max_price"],
+        })
+        session["search_results"] = results
         trace.step(
-            "search_listings",
+            "search_listings (via MCP)",
             inputs=session["parsed"],
-            returned=session["search_results"],
-            note=f"{len(session['search_results'])} match(es)",
+            returned=results,
+            note=f"{len(results)} match(es)",
         )
 
         # ── THE BRANCH ────────────────────────────────────────────────────────
@@ -180,7 +186,7 @@ def run_agent(query: str, wardrobe: dict) -> dict:
         #     session["error"] = _nothing_found_message(parsed)
 
         # UNIT 3:
-        if not session["search_results"]:
+        if not results:
             session["error"] = _nothing_found_message(session["parsed"])
             trace.step(
                 "branch",
@@ -194,7 +200,7 @@ def run_agent(query: str, wardrobe: dict) -> dict:
         # session["selected_item"] = results[0]
 
         # UNIT 3:
-        session["selected_item"] = session["search_results"][0]
+        session["selected_item"] = results[0]
         trace.step("select_item", returned=session["selected_item"])
 
         # ── EXTRA CREDIT: SECOND BRANCH (price check) ─────────────────────────
