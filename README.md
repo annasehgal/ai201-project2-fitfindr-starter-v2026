@@ -13,7 +13,9 @@
 > python app.py ask 'vintage graphic tee under $30'
 > ```
 >
-> **The rest of this file is the submission.**
+> **The rest of this file is the submission.** Pasted program output shows a
+> plain hyphen wherever the program printed an em dash (mostly in listing
+> titles). The raw files in `results/` keep the original characters.
 
 ---
 
@@ -1262,8 +1264,8 @@ criterion's content checks were actually reached.
 
 **Result: 3 of 5 - MISSED** (target 5 of 5).
 
-**Real output from the after-run** (model text copied from
-`results/run_2026-10-13_1949_after.md`; em dashes in titles shown as hyphens)
+**Real output from the after-run** (copied from
+`results/run_2026-10-13_1949_after.md`)
 
 Criterion 1, try 1. Fit card from `tools.py::create_fit_card`:
 
@@ -1362,19 +1364,72 @@ What the after-run does show:
   never saw the example wardrobe (it was empty), so this is a common styling
   phrase colliding with the check, not the tool leaking wardrobe data. The
   criterion as written still counts it as a FAIL, and I have kept that verdict
-  rather than loosening the check. The baseline's two passes had near misses
-  ("chunky black boots", "white canvas sneakers"), so this didn't come from
-  nowhere. Five tries were too few to see it before.
+  rather than loosening the check. It did not occur in the baseline's two
+  completed suggestions, though both came close ("chunky black boots",
+  "white canvas sneakers").
 
-The only direct evidence that the retry works is from outside this
-measurement: in Milestone 2's empty-wardrobe run, the retry version printed
-`[server busy] ... Retrying in 2s` and `... Retrying in 5s`, then completed
-(5 model calls for one run). That shows the retry can recover. It does not
-measure how often, so I am not counting it as a result.
+**Controlled test of the retry (separate from the run logs).** Because the
+live after-run never hit a 503, I tested the retry path directly in
+`test_generate_retry.py`. It uses no network and no API key. The model client
+is replaced with a fake that raises the real `google.genai.errors` exceptions
+(`ServerError(503, ...)`, which is what the client raised in the baseline) in
+a fixed order, and `time.sleep` is replaced so the backoff costs no time.
+
+```
+$ python test_generate_retry.py
+test_503_then_success_is_retried (__main__.RetryTest.test_503_then_success_is_retried) ... ok
+test_agent_handles_exhausted_retries (__main__.RetryTest.test_agent_handles_exhausted_retries)
+Three 503s inside suggest_outfit end the run with a message, not a crash. ... ok
+test_bad_key_is_not_retried (__main__.RetryTest.test_bad_key_is_not_retried) ... ok
+test_other_5xx_codes_are_retried (__main__.RetryTest.test_other_5xx_codes_are_retried) ... ok
+test_rate_limit_still_uses_its_own_retry (__main__.RetryTest.test_rate_limit_still_uses_its_own_retry) ... ok
+test_repeated_503_stops_after_max_attempts (__main__.RetryTest.test_repeated_503_stops_after_max_attempts) ... ok
+test_two_503s_then_success_on_last_attempt (__main__.RetryTest.test_two_503s_then_success_on_last_attempt) ... ok
+test_unknown_model_is_not_retried (__main__.RetryTest.test_unknown_model_is_not_retried) ... ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 0.845s
+
+OK
+```
+
+What these tests check:
+- **A 503 followed by success:** retried once, after a 2.5 s backoff (2 s plus
+  the mocked 0.5 s jitter), then returns the text.
+- **Two 503s, then success:** succeeds on the 3rd and last attempt, after
+  backoffs of 2.5 s and 4.5 s.
+- **503 every time:** stops after exactly 3 calls and raises
+  `ModelUnavailable` with the "overloaded ... Still failing after 3 tries"
+  message.
+- **Other 5xx codes:** 500, 502 and 504 are retried too.
+- **Permanent errors are not retried:** a bad key (400) and an unknown model
+  (404) fail after 1 call with no backoff. The rate-limit (429) path is
+  unchanged.
+- **Through the agent:** three 503s inside `suggest_outfit` end `run_agent`
+  with `session["error"]` set and no crash. The item was still selected
+  (`lst_002`) and `fit_card` is `None`.
+
+To check that the test really detects the problem, I ran the same file against
+the pre-retry `generate.py` from `760370b`, in a scratch copy outside the repo.
+The five 503/5xx tests fail there, because the old code raises on the first
+attempt (`AssertionError: 1 != 3`). The three permanent-error and rate-limit
+tests pass on both versions.
+
+This shows that the retry code does what it says. It does **not** show how
+often retrying rescues a real run, because the live after-run never needed it.
+The before/after comparison above stays as measured. (Milestone 2's
+empty-wardrobe run is the one live example: it printed `[server busy] ...
+Retrying in 2s` and `... Retrying in 5s`, then completed.)
+
+One limitation from reading the code: rate-limit retries and 503 retries share
+one attempt counter. So a 503 that follows one or two 429s in the same call
+gets fewer than 3 attempts. That situation did not come up in either run, and
+I have left the code as committed.
 
 **In one sentence:** the after-run met 4 of 5 criteria (up from 2), but no
-503s occurred, so it does not demonstrate that the retry fixed the baseline
-misses. Criterion 5 still misses, now because of the model's wording, not
+503s occurred, so it does not show that the retry fixed the baseline misses.
+The controlled test shows that the retry works when a 503 happens, and
+criterion 5 still misses, now because of the model's wording rather than
 model errors.
 
 ---
