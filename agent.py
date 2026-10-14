@@ -37,6 +37,9 @@ def new_session(query: str, wardrobe: dict) -> dict:
         "price_check": None,         # what compare_price returned for selected_item
         "cheaper_alternative": None, # set by the price branch when one exists
         "wardrobe_from_memory": False, # True when an empty wardrobe was swapped for the saved one
+        # extra credit (unit 4)
+        "size_retry": None,          # set when an empty sized search was retried without the size
+        "notice": None,              # what the user is told about the dropped size filter
     }
 
 
@@ -135,6 +138,11 @@ def run_agent(query: str, wardrobe: dict) -> dict:
         session["error"] naming what the user could change, and return the
         session without calling suggest_outfit. Otherwise take the first
         result, put it in session["selected_item"], and continue.
+
+    Extra credit (unit 4): before that rule applies, an empty search that had a
+    size is retried once over MCP with the size removed (same description, same
+    max_price). The user is told the size was dropped either way. If the retry
+    is empty too, the rule above stops the run.
     """
     session = new_session(query, wardrobe)
     steps = 0
@@ -180,6 +188,40 @@ def run_agent(query: str, wardrobe: dict) -> dict:
             note=f"{len(results)} match(es)",
         )
 
+        # ── EXTRA CREDIT (unit 4): retry once without the size filter ────────
+        if not results and parsed["size"]:
+            steps += 1
+            trace.check_iterations(steps)
+            dropped = parsed["size"]
+            relaxed = {**parsed, "size": None}
+            results = call_tool("search_listings", {
+                "description": relaxed["description"],
+                "size": None,
+                "max_price": relaxed["max_price"],
+            })
+            session["search_results"] = results
+            session["size_retry"] = {"dropped_size": dropped, "matches": len(results)}
+            session["notice"] = (
+                f"Nothing matched in size {dropped}, so I searched again without "
+                f"the size filter. "
+                + (
+                    f"That found {len(results)} listing(s), but they may not come "
+                    f"in size {dropped}."
+                    if results
+                    else "That found nothing either."
+                )
+            )
+            trace.step(
+                "search_listings (via MCP, size filter dropped)",
+                # Values, not just keys, so the dropped size is visible.
+                inputs=(
+                    f"description={relaxed['description']!r}, size=None "
+                    f"(was {dropped!r}), max_price={relaxed['max_price']}"
+                ),
+                returned=results,
+                note=f"dropped size {dropped}: {len(results)} match(es)",
+            )
+
         # ── THE BRANCH ────────────────────────────────────────────────────────
         # PROFESSOR ORIGINAL / UNIT 4 MCP VERSION:
         # if not results:
@@ -187,7 +229,12 @@ def run_agent(query: str, wardrobe: dict) -> dict:
 
         # UNIT 3:
         if not results:
-            session["error"] = _nothing_found_message(session["parsed"])
+            if session["size_retry"]:
+                # The size is already gone, so don't suggest dropping it again.
+                # session["notice"] says what was dropped; front ends print both.
+                session["error"] = _nothing_found_message({**session["parsed"], "size": None})
+            else:
+                session["error"] = _nothing_found_message(session["parsed"])
             trace.step(
                 "branch",
                 note="search returned []: stopping before suggest_outfit",
