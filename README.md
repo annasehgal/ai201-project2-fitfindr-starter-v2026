@@ -710,20 +710,143 @@ Throw the bomber over your **black cropped zip hoodie** and pair them with your 
      `python run_eval.py --label before` runs everything and writes the table
      into results/. Paste it here and fill in the verdicts. -->
 
+**What this baseline measures.** The 5xx retry in `generate.py` was committed
+(`9771322`) before this formal baseline was run. It is the candidate for this
+unit's one improvement, so the baseline was run **without** it, so that it can
+be compared fairly later. For this run only, `generate.py` was temporarily
+replaced with its version from `760370b` (Milestone 1: MCP move done, no 5xx
+retry). Every other file was the current code, including the MCP call. After
+the run, the committed retry version was restored and checked with
+`git diff HEAD -- generate.py` (no difference). The temporary file was never
+committed.
+
+**How it was run.** `run_eval.py --label before` (5 tries per scenario, cache
+off, temperature 0.9). Raw output: `results/run_2026-10-13_1921_before.md`.
+It ran through a small wrapper kept outside the repo. The wrapper called
+`run_eval.main()` unchanged, added a pass-through recorder on
+`agent.suggest_outfit` to capture the exact `id` it received (criterion 3), and
+saved each session for scoring. 25 tries, 30 model calls. Every model-calling
+try produced different text, so the cache was not reusing answers.
+
+**Evaluation setup added in this milestone** (test harness only, not agent code):
+`scenarios.py` now has one scenario per criterion. Criterion 4 needs five
+different listings, and a single query always selects the same listing, so that
+scenario lists five `queries`. `run_eval.py` runs `queries[k-1]` on try *k*. The
+five are `lst_005`, `lst_018`, `lst_028` (brand `None`) and `lst_024`
+(Ralph Lauren), `lst_004` (Champion), across depop, thredUp and poshmark.
+
 | Criterion | Target | Try 1 | Try 2 | Try 3 | Try 4 | Try 5 | Verdict |
 |---|---|---|---|---|---|---|---|
-| 1.  |  |  |  |  |  |  |  |
-| 2.  |  |  |  |  |  |  |  |
-| 3.  |  |  |  |  |  |  |  |
-| 4.  |  |  |  |  |  |  |  |
-| 5.  |  |  |  |  |  |  |  |
+| 1. A matching query completes all three tools | 4 of 5 | PASS | PASS | PASS | FAIL | FAIL | MISSED (3/5) |
+| 2. An impossible query stops before the second tool | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 3. Item id passed to `suggest_outfit` matches `session["selected_item"]` | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 4. The fit card uses the real listing facts | 4 of 5 | FAIL | FAIL | FAIL | FAIL | FAIL | MISSED (0/5) |
+| 5. An empty wardrobe still gets a full run | 5 of 5 | FAIL | FAIL | FAIL | PASS | PASS | MISSED (2/5) |
 
-**Real output from one try**, pasted as text, naming the file and function
-that produced it:
+**How each try was scored** (criteria exactly as written in `criteria.md`):
+
+1. PASS = no early stop, `suggest_outfit` was called, and a non-empty fit card came back.
+2. PASS = `session["error"]` set with a "Things to change" message, and `suggest_outfit` never called.
+3. PASS = the id recorded going into `suggest_outfit` equals `session["selected_item"]["id"]`
+   (`lst_013` = `lst_013` in all 5). In tries 1–2 the model then failed *inside*
+   `suggest_outfit`, but the right item had already been passed, which is what this
+   criterion checks.
+4. PASS = a fit card exists, is 2–4 sentences, contains the exact price and platform,
+   and has no "None" or invented brand. **No try produced a fit card**, so the
+   content checks were never reached in this baseline.
+5. PASS = non-empty outfit suggestion and fit card, and the suggestion names no
+   example-wardrobe item. Both passes (tries 4–5) were checked against all 10
+   example-wardrobe names: no match.
+
+**Every FAIL in this run is the same observed error.** All 12 failed tries
+(criterion 1 tries 4–5, criterion 4 tries 1–5, criterion 5 tries 1–3, plus the
+two in-`suggest_outfit` failures in criterion 3 tries 1–2, which still passed)
+stopped with `503 UNAVAILABLE ... This model is currently experiencing high
+demand`. None crashed. The diagnosis goes in Verdicts and Diagnoses (Milestone 4).
+
+**Real output, one try per criterion**
+
+Criterion 1, try 1. Trace from `agent.py::run_agent` (via `trace.step`),
+fit card from `tools.py::create_fit_card`:
 
 ```
+[1] parse_query
+      in:  vintage graphic tee under $30
+      out: dict with keys: description, size, max_price
+[2] search_listings (via MCP)
+      in:  dict with keys: description, size, max_price
+      out: 10 items: Y2K Baby Tee — Butterfly Print, Graphic Tee — 2003 Tour Bootleg Style, Vintage Band Tee — Faded Grey … +7 more
+      →    10 match(es)
+[3] select_item
+      out: Y2K Baby Tee — Butterfly Print ($18.0, depop)
+[4] compare_price
+      in:  Y2K Baby Tee — Butterfly Print ($18.0, depop)
+      out: dict with keys: category, price, typical_price, compared_with, verdict
+      →    below typical
+[5] branch
+      →    price is fine: no alternative needed
+[6] suggest_outfit
+      in:  Y2K Baby Tee — Butterfly Print ($18.0, depop)
+      out: Hey friend! That Y2K butterfly baby tee is an absolute score—fitted graphic baby tees are so much fun and supe…
+      →    10 wardrobe item(s)
+[7] create_fit_card
+      in:  Y2K Baby Tee — Butterfly Print ($18.0, depop)
+      out: Just scored the absolute dreamiest Y2K Baby Tee — Butterfly Print for only $18.00 on Depop! I am totally obses…
+
+Fit card: Just scored the absolute dreamiest Y2K Baby Tee — Butterfly Print for only $18.00 on Depop! I am totally obsessed with styling this sweet little graphic tee for an effortless mix of retro streetwear and grunge edge. Grab it now before I change my mind and keep it for myself!
+```
+
+Criterion 2, try 1. `session["error"]` from `agent.py::_nothing_found_message`.
+The trace stops at `[3] branch → search returned []: stopping before suggest_outfit`:
 
 ```
+Nothing in the listings matched description 'designer ballgown', size XXS, under $5.
+Things to change: try broader words — 'jacket' finds more than 'cropped corduroy jacket'; drop the size, or try a neighbouring one; raise the price ceiling above $5.
+```
+
+Criterion 3, try 3. Trace from `agent.py::run_agent`. The selected item and the
+`suggest_outfit` input are the same listing. Recorded ids: `selected_item` =
+`lst_013`, passed to `suggest_outfit` = `lst_013`.
+
+```
+[3] select_item
+      out: 90s Silk Slip Dress — Floral, Midi Length ($30.0, depop)
+...
+[6] suggest_outfit
+      in:  90s Silk Slip Dress — Floral, Midi Length ($30.0, depop)
+      out: Hey there! That 90s floral slip dress is an absolute goldmine—plus, a tiny side-seam snag is totally worth ove…
+      →    10 wardrobe item(s)
+```
+
+Criterion 4, try 1 (`corduroy wide-leg pants`, `lst_005`). `session["error"]`
+from the `ModelUnavailable` handler in `agent.py::run_agent`. No fit card:
+
+```
+The model couldn't be reached, so the outfit and caption steps didn't run. The search worked — 5 listing(s) were found. Check GEMINI_API_KEY in your .env, then run the same query again.
+What the service said: Couldn't reach the model: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}
+```
+
+Criterion 5, try 4 (empty wardrobe). Suggestion from `tools.py::suggest_outfit`
+(trimmed), fit card from `tools.py::create_fit_card`:
+
+```
+Outfit: Hey there! Oh, a cropped Wrangler jacket is an absolute thrift store holy grail—the structure on those vintage shoulders is unmatched!
+
+Here are two super easy ways to style it with things you probably already own:
+
+**1. The Off-Duty Model Look**
+Throw this jacket right over a fitted black ribbed tank top and your favorite straight-leg blue jeans ... Add a pair of simple white canvas sneakers and a baseball cap ...
+**2. Sweet Meets Street**
+... tossing it over a simple black or olive green slip dress. Ground the outfit with chunky black boots or classic canvas sneakers ...
+
+Fit card: Nothing beats the structured shoulders on a vintage Wrangler Denim Jacket — Light Wash, Cropped, which gives off major off-duty model energy when thrown over a simple tank and straight-leg jeans. This versatile piece is a total blank canvas just waiting to be customized for your wardrobe. Snag it now for $42.00 over on my Poshmark closet!
+```
+
+**Aborted first attempt (disclosed, not counted).** An earlier start of this
+baseline used a scenario layout that would have run 45 tries (five separate
+criterion-4 scenarios). I stopped it after 2 tries to switch to the 25-try
+layout above. Those 2 tries (criterion 1: one completed, one stopped on a 503)
+were run with the same pre-retry `generate.py`. They are not in the table.
 
 ---
 

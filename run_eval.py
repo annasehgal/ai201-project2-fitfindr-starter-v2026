@@ -37,6 +37,13 @@ import config
 import scenarios as scenario_module
 
 
+def query_for(scenario, attempt):
+    """The query for one try. A scenario with "queries" runs queries[attempt-1]."""
+    if "queries" in scenario:
+        return scenario["queries"][attempt - 1]
+    return scenario["query"]
+
+
 def run_once(scenario, use_trace=True):
     """One scenario, one try. Returns everything worth recording."""
     from agent import run_agent
@@ -81,6 +88,13 @@ def main():
         print("scenarios.py is empty. Milestone 3 starts by filling it in.", file=sys.stderr)
         sys.exit(1)
 
+    short = [s["name"] for s in scenario_module.SCENARIOS
+             if "queries" in s and len(s["queries"]) < args.tries]
+    if short:
+        print(f"These scenarios list fewer queries than --tries {args.tries}: {short}",
+              file=sys.stderr)
+        sys.exit(1)
+
     if args.tries < 5:
         print(f"⚠️  {args.tries} tries. Your criteria are written out of five.\n")
 
@@ -91,11 +105,16 @@ def main():
     rows = []
     for scenario in scenario_module.SCENARIOS:
         print(f"{scenario['name']}  ({scenario['wardrobe']} wardrobe)")
-        print(f"  query: {scenario['query']}")
+        if "queries" not in scenario:
+            print(f"  query: {scenario['query']}")
 
         tries = []
         for attempt in range(1, args.tries + 1):
-            record = run_once(scenario)
+            query = query_for(scenario, attempt)
+            if "queries" in scenario:
+                print(f"  try {attempt} query: {query}")
+            record = run_once({**scenario, "query": query})
+            record["query"] = query
             tries.append(record)
 
             if record["crashed"]:
@@ -172,13 +191,20 @@ def write_report(rows, args):
 
     for row in rows:
         scenario = row["scenario"]
+        query_line = (
+            f"- Query: `{scenario['query']}`"
+            if "queries" not in scenario
+            else "- Queries: one per try, listed under each try"
+        )
         lines += [f"### {scenario['name']}", "",
-                  f"- Query: `{scenario['query']}`",
+                  query_line,
                   f"- Wardrobe: {scenario['wardrobe']}", ""]
 
         for i, record in enumerate(row["tries"], 1):
             lines.append(f"**Try {i}**")
             lines.append("")
+            if "queries" in scenario:
+                lines += [f"- Query: `{record['query']}`", ""]
 
             if record["crashed"]:
                 lines += ["Crashed:", "", "```", record["crashed"], "```", ""]

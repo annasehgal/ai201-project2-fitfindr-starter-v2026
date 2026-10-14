@@ -29,24 +29,39 @@ SCENARIOS = [
         "criterion": 2,
     },
     {
-        # A user with nothing saved. One of unit 4's three failure modes.
+        # A normal query; what's checked is the session. Criterion 3 — the id
+        # passed to suggest_outfit matches session["selected_item"]["id"].
+        "name": "selected item is the item passed on",
+        "query": "silk slip dress in midi length under $40",
+        "wardrobe": "example",
+        "criterion": 3,
+    },
+    {
+        # Criterion 4 needs five DIFFERENT listings, at least two with brand
+        # None. One query can only ever select one listing (search is
+        # deterministic), so this scenario gives run_eval.py a list: try k
+        # runs queries[k-1]. Each query selects a different listing first
+        # (checked against search_listings before the run).
+        "name": "fit card uses real listing facts",
+        "queries": [
+            "corduroy wide-leg pants",  # lst_005 — brand None, depop, $32
+            "vintage linen blazer",     # lst_018 — brand None, thredUp, $38
+            "suede chelsea boots",      # lst_028 — brand None, poshmark, $44
+            "vintage polo shirt",       # lst_024 — Ralph Lauren, thredUp, $18
+            "90s track jacket",         # lst_004 — Champion, poshmark, $45
+        ],
+        "wardrobe": "example",
+        "criterion": 4,
+    },
+    {
+        # A user with nothing saved. One of unit 4's three failure modes, and
+        # criterion 5: a non-empty suggestion and a fit card, naming no item
+        # from the example wardrobe.
         "name": "empty wardrobe",
         "query": "denim jacket under $50",
         "wardrobe": "empty",
-        "criterion": None,
+        "criterion": 5,
     },
-    # TODO: add what your criteria 3, 4 and 5 need.
-    #
-    # Set "criterion" to the number in criteria.md that the scenario tests.
-    # "criterion": None means a diagnostic run — useful to have, but it isn't
-    # one of your five, and run_eval.py marks it as such in the table.
-    #
-    # For a state criterion, any normal query works — what you're checking is
-    # what ends up in the session, not what the user typed.
-    #
-    # For a fit-card criterion, you probably want the SAME query listed more
-    # than once, or several different items, depending on what your criterion
-    # actually says.
 ]
 
 WARDROBES = ("example", "empty")
@@ -56,7 +71,11 @@ def validate() -> list[str]:
     """Complain about anything malformed, before a long run rather than during."""
     problems = []
     for i, scenario in enumerate(SCENARIOS, 1):
-        if not scenario.get("query", "").strip():
+        queries = scenario.get("queries")
+        if queries is not None:
+            if not queries or not all(str(q).strip() for q in queries):
+                problems.append(f"scenario {i} has an empty entry in queries")
+        elif not scenario.get("query", "").strip():
             problems.append(f"scenario {i} has no query")
         if scenario.get("wardrobe") not in WARDROBES:
             problems.append(
