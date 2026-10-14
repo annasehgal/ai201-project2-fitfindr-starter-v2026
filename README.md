@@ -944,15 +944,101 @@ were run with the same pre-retry `generate.py`. They are not in the table.
      Look for a pattern. Three misses on the same tool is one problem, not
      three. -->
 
+Verdicts are read against the targets in `criteria.md`, using the baseline
+above (pre-retry `generate.py` from `760370b`, 5 tries per criterion).
+
 | # | Criterion | Target | Verdict | How I decided |
 |---|---|---|---|---|
-| 1 |  |  |  |  |
-| 2 |  |  |  |  |
-| 3 |  |  |  |  |
-| 4 |  |  |  |  |
-| 5 |  |  |  |  |
+| 1 | A matching query completes all three tools | 4 of 5 | **MISSED (3/5)** | Counted tries that called all three tools and returned a fit card: tries 1-3. Tries 4-5 stopped with no fit card. 3 is below 4. |
+| 2 | An impossible query stops before the second tool | 5 of 5 | **MET (5/5)** | All 5 tries returned 0 results, stopped at the branch, never called `suggest_outfit`, and returned a "Things to change" message. |
+| 3 | Item id passed to `suggest_outfit` matches `session["selected_item"]` | 5 of 5 | **MET (5/5)** | Compared the recorded id going into `suggest_outfit` with `session["selected_item"]["id"]`: `lst_013` = `lst_013` in all 5. The criterion checks the hand-off, not whether the run finished, so tries 1-2 count even though the model failed afterwards. |
+| 4 | The fit card uses the real listing facts | 4 of 5 | **MISSED (0/5)** | The criterion is scored on fit cards, and none of the 5 tries produced one. A missing card can't meet "each fit card is 2-4 sentences, states the price and platform...", so each try is a FAIL. |
+| 5 | An empty wardrobe still gets a full run | 5 of 5 | **MISSED (2/5)** | Counted tries that returned a non-empty suggestion and a fit card, with no example-wardrobe item named: tries 4-5. Tries 1-3 returned neither. 2 is below 5. |
 
 **Diagnoses**
+
+**The pattern: one problem, not three.** All three misses come from the same
+cause. Twelve of the 25 tries hit the same error from the model service,
+`503 UNAVAILABLE ... This model is currently experiencing high demand`
+(12 `model unavailable` steps and 12 `503 UNAVAILABLE` messages in
+`results/run_2026-10-13_1921_before.md`). Those 12 tries became 10 FAIL cells,
+not 12, because criterion 3 tries 1-2 hit the error after the step that
+criterion checks, so they still passed. No try crashed, and nothing failed for
+any other reason.
+
+**Where and how it happens.** The failure is in the tool layer, at the shared
+model call that both model-calling tools go through. It isn't in the branch,
+the session or the model's text, because no text came back at all.
+
+1. `tools.py::suggest_outfit` (line 221) and `tools.py::create_fit_card`
+   (line 291) both call `generate()`.
+2. In the baseline `generate.py` (`760370b`), `generate()` catches the error
+   and only retries if it looks like a rate limit: `"429"`,
+   "resource ... exhaust", or "rate ... limit" (lines 326-330). A 503 matches
+   none of these, so on the **first** attempt it goes to
+   `if not rate_limited: raise ModelUnavailable(_explain(exc))` (lines 331-332).
+   `_explain` falls through to `"Couldn't reach the model: {exc}"` (line 220),
+   which is the exact text in every failed try.
+3. `agent.py::run_agent` catches `ModelUnavailable` (line 283), sets
+   `session["error"]`, records the `model unavailable` trace step and returns.
+   The remaining model steps never run, so no fit card is produced.
+
+So a temporary, server-side error ends the run on its first attempt, with no
+retry. The error can clear quickly: in Milestone 2's empty-wardrobe run, the
+retry version recovered from 503s after waits of 2-5 seconds. The tool code and prompts were never the
+problem in these tries. They never got a response to work with.
+
+**Criterion 1 - MISSED (3/5).** Step and mechanism, per try:
+- Try 4: the 503 hit during step `[6] suggest_outfit`, so neither model tool returned anything.
+- Try 5: `suggest_outfit` returned an outfit, then the 503 hit during step `[7] create_fit_card`.
+
+Both go through the mechanism above. Tries 1-3 show that when the model
+responds, the loop gets through all three tools.
+
+**Criterion 4 - MISSED (0/5), and what this baseline cannot tell us.** All
+five tries ended at the same mechanism: tries 1-4 in `suggest_outfit` and try 5
+(`lst_004`, Champion) in `create_fit_card` after an outfit came back. The
+verdict is a real miss as the criterion is written, because it requires a card.
+
+**What the baseline cannot say:** the checks the criterion is really about (2-4
+sentences, exact price, platform, no "None", no invented brand) were **never
+reached**. No card for any of the five listings was produced, so this run
+contains no evidence either way about whether `create_fit_card` gets listing
+facts right. That includes the three no-brand listings (`lst_005`, `lst_018`,
+`lst_028`), which are the risky case. Nothing here shows a wrong price, a
+missing platform or an invented brand, and I am not claiming one. I'm also not
+revising the criterion: it is measurable and measured the right thing. It was
+blocked by an upstream failure, not broken.
+
+**Criterion 5 - MISSED (2/5).** Tries 1-3 hit the 503 during step `[6]
+suggest_outfit`, on the empty-wardrobe prompt branch (`tools.py` lines 197-204),
+before any text came back. The two tries where the model responded (4-5) both
+passed: non-empty general advice, a fit card, and none of the 10
+example-wardrobe item names. Two passes is a small sample, but nothing in the
+run points to a fault in the empty-wardrobe handling itself.
+
+**Criteria that were met**
+
+- **Criterion 2 - MET (5/5).** The empty-search branch (`agent.py::run_agent`,
+  `if not results:` at line 189) stopped all 5 tries at step `[3] branch` with
+  0 search results, before `suggest_outfit`, and
+  `agent.py::_nothing_found_message` named the description, size and price to
+  change. This path makes no model calls, so the 503s couldn't affect it. The
+  limitation: all 5 tries used the same impossible query.
+- **Criterion 3 - MET (5/5).** In every try, the id that went into
+  `suggest_outfit` was `lst_013`, the same as `session["selected_item"]["id"]`.
+  This was recorded from the call, not inferred from the trace. The hand-off
+  happens before any model call (`session["selected_item"] = results[0]` at
+  line 203, then `suggest_outfit(session["selected_item"], ...)` at line 262), so
+  the 503 in tries 1-2 came after the step the criterion checks. The
+  limitation: one query and one listing, so it shows the hand-off is consistent
+  across 5 runs, not across different items.
+
+**What this points to for Milestone 5.** All three misses share one step and
+one mechanism: no retry on a temporary 503 in `generate()`. That is what the
+already-committed 5xx retry (`9771322`) targets, and the after-run will measure
+whether it works. A rerun is also the first chance to actually score criterion
+4's listing-fact checks.
 
 
 
