@@ -455,6 +455,63 @@ Nothing beats a broken-in pair of Vintage Levi's 501 Jeans - Medium Wash for tha
   the same item in `selected_item` and in `suggest_outfit`, and the impossible
   one stopped after the search with `fit_card` still `None`.
 
+**Unit 4.** I used Claude Code throughout this unit. It did most of the
+reading, running and writing. I decided what each milestone should do,
+reviewed what it produced, and stopped or redirected it when something was
+off.
+
+**Moment 3 - the MCP move and the failure modes**
+
+- *What I asked for:* to finish and check the MCP move, so that
+  `search_listings` is registered in `mcp_server.py` and `run_agent` calls it
+  through `mcp_client.call_tool`. For Milestone 2, I asked it to read the
+  existing handlers before adding anything, and to trigger the three failures
+  without ever printing my key.
+- *What came back:* the registration and the `call_tool` swap were correct.
+  Its review found typos in the tool description, plus a false claim that
+  tied results are sorted "cheaper first" (`tools.search_listings` sorts only
+  by keyword score). All three failures were already handled by Unit 3 code.
+- *What I changed or checked:* the description was corrected. I had the direct
+  call and the MCP call compared on three queries (identical results). No
+  handler code was added, because none of the failures crashed or went
+  silent. For the bad-key test, the key was changed and put back
+  automatically, and a checksum confirmed it was restored exactly.
+
+**Moment 4 - designing the baseline**
+
+- *What I asked for:* a baseline with five tries per criterion. The 5xx retry
+  was already committed (`9771322`), so I asked for the baseline to run on the
+  pre-retry `generate.py` from `760370b`, with the current file put back
+  afterwards.
+- *What came back:* its first plan ran 9 scenarios × 5 tries = 45 runs,
+  because it gave criterion 4 five separate scenarios.
+- *What I changed:* I stopped that run after 2 tries and asked why it wasn't
+  25. The plan was changed to one scenario per criterion. The criterion-4
+  scenario lists five queries, one per try (a small change to `run_eval.py`).
+  The 2 aborted tries are disclosed in the run log, not hidden. I also had
+  each try scored against the criterion text exactly as written. Criterion 3
+  tries 1-2 stay PASS because the item was handed on before the model
+  failed, so 12 tries hit the 503 but there are only 10 FAIL cells.
+
+**Moment 5 - the diagnosis, the improvement and how far to trust it**
+
+- *What I asked for:* a diagnosis tied to the logs and source lines, then the
+  after-run using the retry as my one improvement.
+- *What came back:* all 12 failing baseline tries hit the same
+  `503 UNAVAILABLE`. In the old `generate()`, a 503 didn't match the
+  rate-limit checks, so it raised on the first attempt. The after-run went
+  from 2 to 4 criteria met, but Claude pointed out that it contained no 503s.
+- *What I changed:* I kept the conclusion limited. The README says the
+  after-run can't show that the retry caused the better scores. I asked for a
+  controlled test, and Claude wrote `test_generate_retry.py` (mocked client,
+  no network, no real waiting). I had it run against the pre-retry
+  `generate.py` to make sure the test can actually fail: 5 of 8 tests fail
+  there, and all 8 pass on the current code. I kept criterion 5's new
+  "chunky white sneakers" failures as FAILs rather than loosening the check.
+  I also had the README checked against the assignment several times. That
+  fixed code references that were out of date after the MCP move, a wrong
+  failure count, and leftover template comments.
+
 ---
 
 ## Extra Credit
@@ -1058,9 +1115,20 @@ Things to change: try broader words - 'jacket' finds more than 'cropped corduroy
 The empty-search trace stops at step 3 and the happy path runs to step 7, so
 the branch works. Step 2 in both is the MCP call.
 
-**On the MCP move:** it worked. `search_listings` now runs through MCP (step 2
-in both traces above), and nothing behaved differently afterwards: the MCP call
-returns the same `list[dict]` as the direct call. Details and evidence below.
+**On the MCP move:** `search_listings` is now registered as an MCP tool in
+`mcp_server.py`. `agent.py::run_agent` calls it with
+`mcp_client.call_tool("search_listings", {...})` instead of calling the
+function directly. The search code itself, the other two tools and the loop
+are unchanged. The data did not change: the MCP call returned the same
+`list[dict]` as the direct call for the three queries I compared, and both
+traces above show the same steps as before, with step 2 now labelled
+`search_listings (via MCP)`. Two things are different in practice:
+- Each call starts the server and stops it again (that's how `mcp_client.py`
+  works).
+- A broken MCP call now raises `MCPError`, which `run_agent` does not catch.
+  Its message is a generic "unhandled errors in a TaskGroup".
+
+Neither came up in the test runs. Details and evidence are below.
 
 ### Milestone 1 - MCP Move: `search_listings` (works)
 
@@ -1436,11 +1504,54 @@ model errors.
 
 ## What's Still Broken
 
-<!-- For each criterion still missed: what you'd do, and why you stopped where
-     you did. "I ran out of time" is fine if it's true. Pretending nothing is
-     left is not. -->
+**Criterion 5 is still missed (3/5 after, 2/5 before).** In after-run tries 1
+and 5, the empty-wardrobe suggestion said "Finish it off with chunky white
+sneakers". That matches example-wardrobe item `w_007` ("Chunky white
+sneakers"), which the criterion names as the thing not to say. The model was
+given an empty wardrobe and never saw that list, so it picked a common phrase
+that happens to match. Under the criterion as written, it is still a FAIL. The
+same two suggestions also tell the user these are things they "probably
+already own" (try 1) or "probably already have in your closet" (try 5), which
+presents generic pieces as if the user had them.
+- *What I'd do next:* change the empty-wardrobe prompt in
+  `tools.py::suggest_outfit` (lines 197-204). It would ask for kinds of pieces
+  to look for, not specific items, and drop the "already own" framing. Then
+  I'd re-run criterion 5 with the same five tries. I would also look at
+  whether the criterion should be revised to say what it actually cares about
+  (presenting pieces the user doesn't own as theirs). Any revision would sit
+  under the original line in `criteria.md`, without lowering the target.
+- *Why I stopped:* this is a second change. The unit allows the MCP move plus
+  one improvement, and my one improvement was the retry, which targeted the
+  shared 503 failure in the baseline. This failure only showed up in the
+  after-run.
 
+**Criteria 1 and 4 met their targets in the after-run, but I can't credit the
+retry for that.** Both missed in the baseline (3/5 and 0/5) because of 503s.
+The after-run had no 503s at all: 0 in the raw log, no `[server busy]` lines,
+and exactly 2 model calls per model-calling try. So the improvement came from
+the service being available during that run. The controlled test
+(`test_generate_retry.py`) shows separately that the retry recovers from a
+503 and gives up after 3 attempts. It cannot say how often that rescues a
+real run.
+- *What I'd do next:* re-run the after-eval while Gemini is returning 503s, or
+  run more tries so some 503s occur, and count how many runs the retry saves.
+- *Why I stopped:* I can't make Google's service overload on demand, and more
+  live runs spend free-tier quota without changing the code. The controlled
+  test was the evidence I could get within this unit.
 
+**Smaller limits I'm leaving as they are:**
+- **Shared retry counter.** Rate-limit (429) retries and 503 retries share one
+  attempt counter in `generate()`, so a 503 that follows a 429 in the same
+  call gets fewer than 3 attempts. It never happened in either run, and
+  changing it would be another code change.
+- **Misleading advice for a 503.** The `ModelUnavailable` message in
+  `agent.py::run_agent` always tells the user to "Check GEMINI_API_KEY in your
+  .env", whatever the cause. For a 503, the "What the service said" line
+  correctly says the service is overloaded, but the advice above it points at
+  the key. Fixing it would also be an extra change.
+- **Narrow coverage.** Criteria 2 and 3 each used one query (one impossible
+  search and one listing, `lst_013`), and criterion 4 got one card per
+  listing per run. The results hold for those inputs, not every query.
 
 <!-- ═════════════════════════════════════════════════════════════════════
 
