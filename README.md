@@ -254,6 +254,11 @@ where `results` is what `search_listings` returned (also stored in
 `if not session["search_results"]:`. Unit 4's MCP move renamed the variable,
 not the rule.)
 
+**Size retry (Unit 4 extra credit):** since the Unit 4 stretch feature, an
+empty search that had a size is retried once over MCP without the size before
+this rule applies. If that is empty too, the rule above stops the run. See
+[Extra Credit - Unit 4](#extra-credit---unit-4-retry-with-looser-constraints).
+
 **Second branch (extra credit):** after selecting the item, `run_agent` checks
 its price with `compare_price`. If it's above typical for its category, it
 looks for a cheaper same-category listing in the search results. See
@@ -511,6 +516,26 @@ off.
   I also had the README checked against the assignment several times. That
   fixed code references that were out of date after the MCP move, a wrong
   failure count, and leftover template comments.
+
+**Moment 6 - the stretch feature**
+
+- *What I asked for:* the "retry with looser constraints" stretch feature,
+  with the behavior spelled out: one retry without the size, `max_price`
+  unchanged, both searches over MCP, the user told either way, and no retry
+  when there is no size. I asked for the declaration to be committed before
+  any code.
+- *What came back:* Claude wrote the change in `agent.py` and `app.py` and
+  the tests in `test_search_retry.py`. Its first commit attempt stalled on my
+  signed-commit setup, so I make the commits myself.
+- *What I changed or checked:* I noticed that `app.py` printed the size notice
+  only in the success branch. In the failure case the notice reached the user
+  only because it was embedded in the error text. I had the notice printed in
+  both branches, with the error kept to the not-found message and its
+  recovery steps. I also had tests added that check the actual CLI output for
+  both outcomes. I also
+  asked for the retry step in the trace to show its real inputs. Because those
+  fixes changed user-facing output, the stretch evaluation was run again on
+  the final code. The earlier run is kept and labelled as superseded.
 
 ---
 
@@ -1113,7 +1138,37 @@ Things to change: try broader words - 'jacket' finds more than 'cropped corduroy
 ```
 
 The empty-search trace stops at step 3 and the happy path runs to step 7, so
-the branch works. Step 2 in both is the MCP call.
+the branch works. Step 2 in both is the MCP call. Both traces were recorded in
+Milestone 2, before the Unit 4 stretch feature.
+
+**Empty search with the size retry (current code)**
+
+The same impossible query after the stretch feature was added. Step 3 is a
+second MCP call with the size removed, and its real inputs are shown. It is
+also empty, so the run stops before `suggest_outfit`:
+
+```
+$ python app.py ask 'designer ballgown size XXS under $5' --trace
+[1] parse_query
+      in:  designer ballgown size XXS under $5
+      out: dict with keys: description, size, max_price
+[2] search_listings (via MCP)
+      in:  dict with keys: description, size, max_price
+      out: [] (empty)
+      →    0 match(es)
+[3] search_listings (via MCP, size filter dropped)
+      in:  description='designer ballgown', size=None (was 'XXS'), max_price=5.0
+      out: [] (empty)
+      →    dropped size XXS: 0 match(es)
+[4] branch
+      →    search returned []: stopping before suggest_outfit
+
+  Note:     Nothing matched in size XXS, so I searched again without the size filter. That found nothing either.
+  Nothing in the listings matched description 'designer ballgown', under $5.
+Things to change: try broader words - 'jacket' finds more than 'cropped corduroy jacket'; raise the price ceiling above $5.
+
+0 model calls this session
+```
 
 **On the MCP move:** `search_listings` is now registered as an MCP tool in
 `mcp_server.py`. `agent.py::run_agent` calls it with
@@ -1187,7 +1242,10 @@ Things to change: try broader words - 'jacket' finds more than 'cropped corduroy
 
 It names each constraint in play and how to loosen it. Suggestions only appear
 for constraints the user set: a query with no size or price (e.g. `'striped
-wool scarf for winter'`) only gets "try broader words".
+wool scarf for winter'`) only gets "try broader words". (This was recorded
+before the stretch feature. The current code first retries without the size
+and then gives the same guidance, minus the size it already dropped. See
+Loop Trace.)
 
 **2. Empty wardrobe:** the CLI printed `(running with an empty wardrobe)`, and
 `suggest_outfit` ran with `0 wardrobe item(s)`. It returned general advice,
@@ -1524,6 +1582,11 @@ presents generic pieces as if the user had them.
   one improvement, and my one improvement was the retry, which targeted the
   shared 503 failure in the baseline. This failure only showed up in the
   after-run.
+- *Seen again later:* the separate stretch evaluation (Extra Credit - Unit 4),
+  which did not touch `suggest_outfit`, also missed criterion 5 (4/5). That
+  time the model wrote "oversized grey crewneck sweatshirt", the name of
+  example-wardrobe item `w_004`. So the problem is common item names in
+  general, not one phrase.
 
 **Criteria 1 and 4 met their targets in the after-run, but I can't credit the
 retry for that.** Both missed in the baseline (3/5 and 0/5) because of 503s.
@@ -1573,7 +1636,213 @@ Planned behavior, in `agent.py::run_agent`:
   as before. There is only one retry.
 - If the query has no size, there is nothing to drop, so there is no retry.
 
-Status: declared, not implemented yet.
+Status: implemented. The code, tests and evaluation are below.
+
+**Why this one.** Unit 3's empty-search message already told users to "drop
+the size, or try a neighbouring one". This feature does that once
+automatically, and says so. It also adds no model call, so its effect on the
+search step can be tested exactly. The other two stretch options (a second
+tool on MCP, a second improvement) would have been a larger change to the
+agent.
+
+### What changed in the code
+
+- **`agent.py::run_agent`:** after the first `search_listings` call, if it
+  returned `[]` and `parsed["size"]` is set, it calls
+  `call_tool("search_listings", {...})` a second time. The second call keeps
+  the same `description` and `max_price` and sends `size: None`. It runs at
+  most once. The result replaces `session["search_results"]`, and the normal
+  branch then runs on it:
+  - Retry found something: the first result is selected, as usual.
+  - Retry also empty: `session["error"]` gets the usual "nothing found"
+    message, built without the size (it was already dropped), and the run
+    stops before `suggest_outfit`.
+- **New session fields:** `size_retry` (`{"dropped_size": ..., "matches": n}`,
+  or `None` when there was no retry) and `notice` (the sentence the user sees).
+  `serve.py` returns the whole session, so the JSON includes both.
+- **New trace step:** `search_listings (via MCP, size filter dropped)`. It
+  shows the actual values sent, so the dropped size is visible.
+- **`app.py::_ask_one`:** prints `Note: ...` before either the result or the
+  error, so the user is told about the dropped size in both outcomes.
+- **Unchanged:** `tools.py`, `mcp_server.py`, `generate.py`, `criteria.md`,
+  `scenarios.py` and `run_eval.py`.
+
+### Tests
+
+`test_search_retry.py`, 10 tests, no model calls (`suggest_outfit` and
+`create_fit_card` are stubbed):
+
+- **Unit tests** (`SizeRetryTest`): the MCP call is replaced by a recorder that
+  returns set results. The direct `search_listings` import is replaced by one
+  that fails the test if it is ever called.
+  - `test_retry_finds_results`: `[]` then one listing. 2 calls, the second
+    with `size: None`. The item is selected, and the notice names the dropped
+    size.
+  - `test_retry_also_empty_stops_before_suggest_outfit`: `[]` twice. Exactly
+    2 calls, no `suggest_outfit`, and the error has "Things to change" but not
+    "drop the size".
+  - `test_retry_keeps_description_and_max_price`: both calls send the same
+    description and `max_price: 40.0`. Only the size differs.
+  - `test_no_retry_without_a_size`: `[]` with no size. 1 call, no notice.
+  - `test_no_retry_when_first_search_finds_something`: 1 call.
+  - `test_both_searches_go_through_mcp`: both calls are `search_listings` over
+    `call_tool`, and the direct function is never called.
+- **Real MCP server and data** (`SizeRetryRealMCPTest`):
+  - `graphic tee size XL` gets 0 with the size, then 6 without it.
+  - `designer ballgown size XXS under $5` gets 0 then 0. The second call's
+    arguments are exactly
+    `{"description": "designer ballgown", "size": None, "max_price": 5.0}`.
+- **What the user sees** (`SizeRetryCLIOutputTest`): runs `app._ask_one` and
+  checks the printed text. For the failed retry it checks the full Note line,
+  "Things to change: try broader words", "raise the price ceiling above $5",
+  no "drop the size", and no `Found:`. For the successful retry it checks the
+  Note line comes before `Found:`.
+
+```
+$ python test_search_retry.py
+test_failed_retry_output (__main__.SizeRetryCLIOutputTest.test_failed_retry_output) ... ok
+test_successful_retry_output (__main__.SizeRetryCLIOutputTest.test_successful_retry_output) ... ok
+test_real_data_impossible_query_retries_once_then_stops (__main__.SizeRetryRealMCPTest.test_real_data_impossible_query_retries_once_then_stops) ... ok
+test_real_data_size_xl_retries_and_finds (__main__.SizeRetryRealMCPTest.test_real_data_size_xl_retries_and_finds) ... ok
+test_both_searches_go_through_mcp (__main__.SizeRetryTest.test_both_searches_go_through_mcp) ... ok
+test_no_retry_when_first_search_finds_something (__main__.SizeRetryTest.test_no_retry_when_first_search_finds_something) ... ok
+test_no_retry_without_a_size (__main__.SizeRetryTest.test_no_retry_without_a_size) ... ok
+test_retry_also_empty_stops_before_suggest_outfit (__main__.SizeRetryTest.test_retry_also_empty_stops_before_suggest_outfit) ... ok
+test_retry_finds_results (__main__.SizeRetryTest.test_retry_finds_results) ... ok
+test_retry_keeps_description_and_max_price (__main__.SizeRetryTest.test_retry_keeps_description_and_max_price) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 4.975s
+
+OK
+```
+
+`python test_generate_retry.py` (the separate 5xx-retry test) still passes,
+8 of 8. `python test.py` passes 10 of 10, including its live model call.
+
+### Real CLI runs
+
+**The retry still finds nothing.** The full output is under
+[Loop Trace](#loop-trace) ("Empty search with the size retry"). The user sees:
+
+```
+  Note:     Nothing matched in size XXS, so I searched again without the size filter. That found nothing either.
+  Nothing in the listings matched description 'designer ballgown', under $5.
+Things to change: try broader words - 'jacket' finds more than 'cropped corduroy jacket'; raise the price ceiling above $5.
+```
+
+**The retry finds results.** Step 3 is the second MCP call. The two model calls
+were served from the build cache, because the same baby-tee prompts had run
+before.
+
+```
+$ python app.py ask 'graphic tee size XL' --trace
+[1] parse_query
+      in:  graphic tee size XL
+      out: dict with keys: description, size, max_price
+[2] search_listings (via MCP)
+      in:  dict with keys: description, size, max_price
+      out: [] (empty)
+      →    0 match(es)
+[3] search_listings (via MCP, size filter dropped)
+      in:  description='graphic tee', size=None (was 'XL'), max_price=None
+      out: 6 items: Y2K Baby Tee - Butterfly Print, Graphic Tee - 2003 Tour Bootleg Style, Mesh Long-Sleeve Top - Black … +3 more
+      →    dropped size XL: 6 match(es)
+[4] select_item
+      out: Y2K Baby Tee - Butterfly Print ($18.0, depop)
+[5] compare_price
+      in:  Y2K Baby Tee - Butterfly Print ($18.0, depop)
+      out: dict with keys: category, price, typical_price, compared_with, verdict
+      →    below typical
+[6] branch
+      →    price is fine: no alternative needed
+[7] suggest_outfit
+      in:  Y2K Baby Tee - Butterfly Print ($18.0, depop)
+      out: Hey friend! That butterfly baby tee is a total Y2K dream, and since it runs a bit small, it’s going to give yo…
+      →    10 wardrobe item(s)
+[8] create_fit_card
+      in:  Y2K Baby Tee - Butterfly Print ($18.0, depop)
+      out: Channel your inner early-2000s pop star with this Y2K Baby Tee - Butterfly Print, giving you that authentic fi…
+
+  Note:     Nothing matched in size XL, so I searched again without the size filter. That found 6 listing(s), but they may not come in size XL.
+  Found:    Y2K Baby Tee - Butterfly Print - $18.0 on depop
+
+  [outfit and fit card trimmed]
+
+0 model calls this session, 2 served from cache
+```
+
+This shows one limit of the feature. The user asked for XL and got a top
+sized S/M (`lst_002`). The Note warns about this, but the agent doesn't try a
+nearby size or check fit.
+
+### Stretch evaluation (separate from the before/after comparison)
+
+`run_eval.py --label stretch` on the final code (feature on, 5xx retry on),
+through the same wrapper as the other runs. Same scenarios, 5 tries each,
+cache off. Raw output: `results/run_2026-10-13_2016_stretch.md`. 25 tries,
+40 model calls, no crashes, and no `[server busy]` lines (no 503s).
+
+| Criterion | Target | Try 1 | Try 2 | Try 3 | Try 4 | Try 5 | Verdict |
+|---|---|---|---|---|---|---|---|
+| 1. A matching query completes all three tools | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 2. An impossible query stops before the second tool | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 3. Item id passed to `suggest_outfit` matches `session["selected_item"]` | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 4. The fit card uses the real listing facts | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 5. An empty wardrobe still gets a full run | 5 of 5 | FAIL | PASS | PASS | PASS | PASS | MISSED (4/5) |
+
+Evidence per criterion (scoring rules as in Run Log - Before):
+- **1:** all 5 tries completed every step and returned a fit card (380, 393,
+  309, 248 and 413 chars).
+- **2:** this is the only scenario whose query has a size, so it is the only
+  one where the feature ran. In all 5 tries the trace shows two MCP calls
+  (`[2] search_listings (via MCP)` with size XXS, then
+  `[3] search_listings (via MCP, size filter dropped)`). Both were empty, the
+  run stopped at `[4] branch`, and `suggest_outfit` was never called. Each try
+  is still a PASS under the original criterion: it stopped before the second
+  tool and returned a "Things to change" message.
+- **3:** `lst_013` went into `suggest_outfit` and matched
+  `session["selected_item"]["id"]` in all 5.
+- **4:** checked by script and read by hand. All five cards (`lst_005`,
+  `lst_018`, `lst_028`, `lst_024`, `lst_004`) have 2-3 sentences, the exact
+  price and platform, no "None", and no brand the listing doesn't have.
+- **5:** try 1 FAILs. The empty-wardrobe advice says "Layer it right over an
+  oversized grey crewneck sweatshirt", the exact name of example-wardrobe
+  item `w_004`. Tries 2-5 named no example-wardrobe item.
+
+**How to read this run.** It is not a measure of the stretch feature improving
+anything, and it is not part of the before/after comparison. The feature only
+runs when a query has a size, and criteria 1, 3, 4 and 5 use queries without
+one, so it never ran there. The differences from the after-run (criterion 5
+at 4/5 instead of 3/5) are run-to-run model variation, not the feature. What
+it does show:
+- Criterion 2 still holds with the extra MCP call in the path.
+- Criterion 5's problem is not limited to "chunky white sneakers". A third
+  example-wardrobe name turned up, which supports the What's Still Broken
+  diagnosis.
+
+**A superseded first run, disclosed.** I ran the stretch evaluation once
+before fixing how the notice is printed (`results/run_2026-10-13_2013_stretch.md`,
+same 25 tries). Its scores were the same pattern: 5/5, 5/5, 5/5, 5/5, then
+criterion 5 MISSED (4/5). In that run, try 4 said "a basic black or white
+ribbed tank top", which contains the example-wardrobe name "White ribbed tank
+top". The search decisions were the same in that code. Only the printed
+notice, the error text and the trace inputs changed, which is why the run
+above was repeated on the final code.
+
+### Limitations
+
+- Only the size is ever relaxed. A query that is empty because of its words
+  or its price is not retried. The user is told what to change instead.
+- Retried results can be far from the requested size (XL got an S/M top
+  above). The Note says so, but nothing ranks nearby sizes first.
+- No original criterion measures this feature directly. Criterion 2 only
+  confirms that the empty-search stop still works. The 10 tests are the main
+  evidence that the retry behaves as declared.
+- Under the assignment's one-change rule, this is a change beyond the MCP move
+  and the 5xx retry. It is labelled as extra credit and kept out of the
+  original before/after comparison for that reason.
+
 
 <!-- ═════════════════════════════════════════════════════════════════════
 
