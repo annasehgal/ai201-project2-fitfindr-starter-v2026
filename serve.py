@@ -36,6 +36,10 @@ what belongs in one — and the timing field is the one everybody skips.
 import os
 import sys
 import threading
+# capstone?
+import json
+from datetime import datetime, timezone
+import time
 
 # config first, and before anything that talks to the model: it loads your .env
 # and fixes the Windows console encoding for every module that imports it.
@@ -47,6 +51,23 @@ from agent import run_agent
 from utils.data_loader import get_example_wardrobe
 
 app = Flask(__name__)
+# LOG_FILE = config.ROOT / "logs" / "runs.jsonl"
+
+# def log_run(**fields):
+#    entry = {"timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"), **fields}
+    # line = json.dumps(entry, ensure_ascii=False)
+    # LOG_FILE.parent.mkdir(exist_ok=True)
+    # with LOG_FILE.open("a", encoding="utf-8") as f:
+    #   f.write(line + "\n")
+    # print(line, flush=True)
+LOG_FILE = config.ROOT / "logs" / "runs.jsonl"
+def log_run(**fields):
+    entry = {"timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"), **fields}
+    line = json.dumps(entry, ensure_ascii=False)
+    LOG_FILE.parent.mkdir(exist_ok=True)
+    with LOG_FILE.open("a", encoding="utf-8") as f:
+        f.write(line + "\n")
+    print(line, flush=True)
 
 
 # ── one request at a time ─────────────────────────────────────────────────────
@@ -111,6 +132,7 @@ def ask():
     query = (payload.get("query") or "").strip()
     if not query:
         # 400 rather than a stack trace: the caller can act on this one.
+        log_run(status="rejected", error="no query in the request body")
         return jsonify({"error": "Send JSON with a 'query' field, e.g. "
                                  '{"query": "vintage graphic tee under $30"}'}), 400
 
@@ -139,16 +161,22 @@ def ask():
     failure = None
     session = None
     with _one_at_a_time:
+        #capstone timing log -demo
+        started = time.perf_counter()
         try:
             session = run_agent(query, wardrobe)
         except Exception as exc:  # noqa: BLE001 — a 500 with a sentence beats a hang
             failure = f"{type(exc).__name__}: {exc}"
+        seconds = round(time.perf_counter()- started, 2)
 
     # Outside the lock: building a response is not work the next caller should
     # be waiting on.
     if failure is not None:
+        log_run(status="crashed", query=query, error=failure, seconds=seconds)
         return jsonify({"error": failure}), 500
-
+    #capstone
+    log_run(query=query, outpu=session["fit_card"] or session["error"],
+            seconds=seconds)
     return jsonify(session)
 
 
