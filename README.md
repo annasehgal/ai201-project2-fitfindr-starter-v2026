@@ -1965,3 +1965,43 @@ C5: a full run through `create_fit_card`, HTTP 200:
 2. **The log can't say why a run was slow.** The 61284 ms run made 3 model calls instead of 2, so one call was retried. Trial 3's `black boots under $60` also made 3 calls in C5. But the log line holds only `duration_ms` and `model_calls`. The retry reason (rate limit or 5xx) and the time spent sleeping go only to stderr, from `generate.generate`, and the runner discards stderr. From the log alone, "the model was slow", "it waited for the pacing window" and "the service pushed back and it retried" all look the same. That's a gap in the instrumentation this capstone is supposed to provide.
 
 *Least demanding criterion.* **C1.** Validation is a fixed rule that runs before the agent, and `test_failure_handling.py` already covered the same five bodies, so it was close to certain to pass. Next time I'd widen it rather than raise a rate: for example, "10 of 10 malformed requests", adding a query over 1,000 characters, a non-object `wardrobe`, and a wrong `Content-Type`. Those are cases I haven't verified the server handles. The target I'd tighten is **C5**: "5 of 5 matching queries under 10 s, *measured at a rate of 10 requests per minute*" instead of from a fresh minute. Point 1 above shows that the current wording lets the test order decide the result.
+
+**The Improvement**
+
+*What I changed.* `generate.py` now keeps three running totals for the process: time slept in `_wait_for_slot` (the 15-calls-per-minute pacing), time slept between retries the service forced, and the reason for every retry (`server_busy` or `rate_limited`). They're exposed through a new `generate.wait_counts()`, next to the existing `token_counts()`. `serve.py` snapshots those totals before and after each run, inside the one-at-a-time lock, and logs the difference on every request as `pacing_wait_ms`, `retry_wait_ms` and `model_retries`. Three new tests in `test_failure_handling.py` cover it: a 503 that is retried is counted with its 2.5 s wait, a pacing wait is counted, and the fields appear in the log line.
+
+*Which diagnosis it follows.* Point 2 of the initial diagnosis: the log could not say why a run was slow. In the first run, a 61284 ms request with `model_calls: 3` was indistinguishable from a slow model. Three more requests of 16–31 s had to be explained by working out the call count by hand.
+
+*Why this change and not another.* Every criterion was MET, so there was no miss to fix. The weakest thing the run log showed was a gap in the extension itself: a hardening layer whose log can't separate "waiting for quota" from "the model is slow" from "the service pushed back" is only half useful for diagnosis. Making the pacing fail fast instead of waiting would change what users get, and that's a bigger decision than one unit. Recording the wait is something I could build, test and verify in one step.
+
+*Second run log.* `python run_capstone_eval.py --label after`. It uses the same runner, the same inputs, the same targets and the same checks, with three fresh trials and no code changes between them. The evidence is in `results/capstone_after.md` and `.json`.
+
+| Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
+|---|---|---|---|---|---|
+| 1. Malformed requests get a 400, not a crash | 5 of 5 | 5/5 | 5/5 | 5/5 | MET |
+| 2. Every request leaves exactly one matching log line | 10 of 10 | 10/10 | 10/10 | 10/10 | MET |
+| 3. A model failure is reported with its stage, not a crash | 3 of 3 | 3/3 | 3/3 | 3/3 | MET |
+| 4. "Nothing matched" is not logged as success or error | 5 of 5 | 5/5 | 5/5 | 5/5 | MET |
+| 5. Normal queries work and come back in under 10 s | 4 of 5 | 5/5 | 4/5 | 4/5 | MET |
+
+*Before vs after, side by side:*
+
+| Criterion | Before (Run 1 / 2 / 3) | After (Run 1 / 2 / 3) | Verdict before → after |
+|---|---|---|---|
+| 1 | 5/5 · 5/5 · 5/5 | 5/5 · 5/5 · 5/5 | MET → MET |
+| 2 | 10/10 · 10/10 · 10/10 | 10/10 · 10/10 · 10/10 | MET → MET |
+| 3 | 3/3 · 3/3 · 3/3 | 3/3 · 3/3 · 3/3 | MET → MET |
+| 4 | 5/5 · 5/5 · 5/5 | 5/5 · 5/5 · 5/5 | MET → MET |
+| 5 | 5/5 · 5/5 · 5/5 | 5/5 · 4/5 · 4/5 | MET → MET (closer) |
+
+*Did it help?* It did what it was for, and it didn't change any verdict. That was expected, because none of my five criteria measured diagnosability. Here's the honest comparison:
+
+- **The new fields explain slow runs from the log alone.** The slowest C2 request in the rerun now says where its time went: 22982 of its 29351 ms was pacing, not the model:
+  ```json
+  {"timestamp": "2026-11-17T20:31:45+00:00", "request_id": "f3567a510e36", "status": "ok", "stage": "done", "error_type": null, "query": "black boots under $60", "output": "Scored this absolute holy grail Oversized Flannel Shirt — Plaid Red/Black on thredUp for just $22.00, and the vintage Woolrich quality is unmatched! Whether I'm leaning into a 90s grunge streetwear vibe or mixing cozy textures with tailored trousers, this piece is the ultimate effortless layering staple. Run, don't walk, to grab your next thrifted obsession!", "agent_ms": 29350, "model_calls": 2, "cache_hits": 0, "prompt_tokens": 835, "output_tokens": 343, "pacing_wait_ms": 22982, "retry_wait_ms": 0, "model_retries": [], "duration_ms": 29351}
+  ```
+- **C5 got closer to its target, and the improvement is not why.** In the rerun, two C5 runs went over 10 s: 12950 and 10641 ms. Both log lines show `pacing_wait_ms: 0`, `retry_wait_ms: 0` and `model_retries: []`, so the time was spent inside the work itself (the MCP search and the two model calls), not waiting. Before the change I couldn't have told that from the log. The change adds a few counters and a list slice per request, which is negligible next to multi-second model calls. Median C5 time was 5380 ms before and 6789 ms after, which I put down to model latency varying between runs. This is the trade I'd name: C5's margin is thinner than the first run suggested, and that is variance in the model service that this capstone does not control.
+  ```json
+  {"timestamp": "2026-11-17T20:33:47+00:00", "request_id": "d08ea22089a5", "status": "ok", "stage": "done", "error_type": null, "query": "oversized hoodie size L", "output": "Get ready to live in this Chunky Brown Knit Cardigan for all your cozy cottagecore days. Grab it now on Depop for just $35.00 to instantly elevate your wardrobe with effortless earth tones. Style it over a white tank and dark baggy denim for the ultimate vintage streetwear contrast!", "agent_ms": 12949, "model_calls": 2, "cache_hits": 0, "prompt_tokens": 803, "output_tokens": 291, "pacing_wait_ms": 0, "retry_wait_ms": 0, "model_retries": [], "duration_ms": 12950}
+  ```
+- **No retries happened in the rerun**, so `retry_wait_ms` and `model_retries` were only exercised by the unit test with a fake 503, not by a live service error.
