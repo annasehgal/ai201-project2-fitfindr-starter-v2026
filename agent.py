@@ -3,12 +3,12 @@ import re
 import config
 import trace
 from tools import search_listings, suggest_outfit, create_fit_card
-from generate import ModelUnavailable
+from generate import ModelUnavailable, QuotaGuard
 
 # Extra credit: fourth tool and style memory.
 from tools import compare_price
 from utils.style_memory import load_wardrobe, save_wardrobe
-from mcp_client import call_tool
+from mcp_client import call_tool, MCPError
 
 # ── session state ─────────────────────────────────────────────────────────────
 
@@ -40,6 +40,9 @@ def new_session(query: str, wardrobe: dict) -> dict:
         # extra credit (unit 4)
         "size_retry": None,          # set when an empty sized search was retried without the size
         "notice": None,              # what the user is told about the dropped size filter
+        # capstone: where the run was, and what kind of ending it had
+        "stage": None,               # the step running when the run finished or failed
+        "error_type": None,          # None on success; else no_results / tool_error / model_error / internal_error
     }
 
 
@@ -153,6 +156,7 @@ def run_agent(query: str, wardrobe: dict) -> dict:
     try:
         steps += 1
         trace.check_iterations(steps)
+        session["stage"] = "parse_query"
         parsed = parse_query(query)
         session["parsed"] = parsed
         trace.step("parse_query", inputs=query, returned=parsed)
@@ -175,6 +179,7 @@ def run_agent(query: str, wardrobe: dict) -> dict:
         #     session["parsed"]["size"],
         #     session["parsed"]["max_price"],
         # )
+        session["stage"] = "search_listings"
         results = call_tool("search_listings", {
             "description": parsed["description"],
             "size": parsed["size"],
@@ -192,6 +197,7 @@ def run_agent(query: str, wardrobe: dict) -> dict:
         if not results and parsed["size"]:
             steps += 1
             trace.check_iterations(steps)
+            session["stage"] = "search_listings_retry"
             dropped = parsed["size"]
             relaxed = {**parsed, "size": None}
             results = call_tool("search_listings", {
@@ -229,6 +235,7 @@ def run_agent(query: str, wardrobe: dict) -> dict:
 
         # UNIT 3:
         if not results:
+            session["error_type"] = "no_results"
             if session["size_retry"]:
                 # The size is already gone, so don't suggest dropping it again.
                 # session["notice"] says what was dropped; front ends print both.
@@ -256,6 +263,7 @@ def run_agent(query: str, wardrobe: dict) -> dict:
         # selected_item does not change either way.
         steps += 1
         trace.check_iterations(steps)
+        session["stage"] = "compare_price"
         session["price_check"] = compare_price(session["selected_item"])
         trace.step(
             "compare_price",
@@ -306,6 +314,7 @@ def run_agent(query: str, wardrobe: dict) -> dict:
 
         steps += 1
         trace.check_iterations(steps)
+        session["stage"] = "suggest_outfit"
         session["outfit_suggestion"] = suggest_outfit(
             session["selected_item"], session["wardrobe"]
         )
@@ -318,6 +327,7 @@ def run_agent(query: str, wardrobe: dict) -> dict:
 
         steps += 1
         trace.check_iterations(steps)
+        session["stage"] = "create_fit_card"
         session["fit_card"] = create_fit_card(
             session["outfit_suggestion"], session["selected_item"]
         )
@@ -326,8 +336,10 @@ def run_agent(query: str, wardrobe: dict) -> dict:
             inputs=session["selected_item"],
             returned=session["fit_card"],
         )
+        session["stage"] = "done"
 
     except ModelUnavailable as exc:
+        session["error_type"] = "model_error"
         session["error"] = (
             f"The model couldn't be reached, so the outfit and caption steps "
             f"didn't run. The search worked — "
@@ -336,6 +348,29 @@ def run_agent(query: str, wardrobe: dict) -> dict:
             f"again.\nWhat the service said: {exc}"
         )
         trace.step("model unavailable", note="stopping, search results kept")
+
+    # ── CAPSTONE: failures that used to escape run_agent as exceptions ────────
+    # Each one now ends the run with a sentence in session["error"] and the
+    # stage it happened at still in session["stage"], instead of a stack trace.
+    except MCPError as exc:
+        session["error_type"] = "tool_error"
+        session["error"] = (
+            f"The listing search tool failed, so no listings could be checked. "
+            f"Try the same query again in a moment.\nWhat the tool said: "
+            f"{str(exc).splitlines()[0]}"
+        )
+        trace.step("tool error", note=f"stopping at {session['stage']}")
+    except QuotaGuard as exc:
+        session["error_type"] = "model_error"
+        session["error"] = f"The model call budget for this session is used up.\n{exc}"
+        trace.step("quota guard", note=f"stopping at {session['stage']}")
+    except Exception as exc:  # noqa: BLE001 — anything else still ends in a sentence
+        session["error_type"] = "internal_error"
+        session["error"] = (
+            f"Something went wrong at the {session['stage']} step, so the run "
+            f"stopped. {type(exc).__name__}: {exc}"
+        )
+        trace.step("internal error", note=f"stopping at {session['stage']}")
 
     return session
 

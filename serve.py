@@ -43,6 +43,7 @@ from datetime import datetime, timezone
 import config  # noqa: F401
 
 from flask import Flask, jsonify, request
+from werkzeug.exceptions import HTTPException
 
 from agent import run_agent
 from utils.data_loader import get_example_wardrobe
@@ -106,6 +107,54 @@ def log_run(**fields):
 _one_at_a_time = threading.Lock()
 
 
+# ── capstone: one failure layer at the service boundary ──────────────────────
+# Every /ask outcome maps to one status code. "Found nothing" is a normal
+# answer (200); a tool or model failure is the service's fault (502); anything
+# unexpected is ours (500). The caller can tell them apart without parsing
+# the error sentence.
+_HTTP_STATUS = {
+    None: 200,
+    "no_results": 200,
+    "tool_error": 502,
+    "model_error": 502,
+    "internal_error": 500,
+}
+
+_EXAMPLE = '{"query": "vintage graphic tee under $30"}'
+
+
+def _validate(payload):
+    """
+    Check the request body before the agent runs. Returns (query, problem):
+    exactly one of them is None.
+    """
+    if not isinstance(payload, dict):
+        return None, f"The request body must be a JSON object, e.g. {_EXAMPLE}"
+    if "query" not in payload or payload["query"] is None:
+        return None, f"Send JSON with a 'query' field, e.g. {_EXAMPLE}"
+    if not isinstance(payload["query"], str):
+        return None, (f"'query' must be a string, not "
+                      f"{type(payload['query']).__name__}, e.g. {_EXAMPLE}")
+    query = payload["query"].strip()
+    if not query:
+        return None, f"'query' is empty. Say what you're looking for, e.g. {_EXAMPLE}"
+    return query, None
+
+
+@app.errorhandler(Exception)
+def _unhandled(exc):
+    """
+    Last line of defence: anything that escapes a route becomes a JSON 500 with
+    a log record, never Flask's HTML error page and never an absent log line.
+    """
+    if isinstance(exc, HTTPException):
+        return exc  # 404, 405 and friends keep their own codes
+    log_run(status="error", stage="serve", error_type="internal_error",
+            error=f"{type(exc).__name__}: {exc}")
+    return jsonify({"error": "Something went wrong inside the server.",
+                    "error_type": "internal_error", "stage": "serve"}), 500
+
+
 @app.get("/health")
 def health():
     """Is the server awake? A host pings something like this to find out."""
@@ -122,13 +171,14 @@ def ask():
                                                 example wardrobe the CLI uses.
     Out:  the session dict from run_agent(), as JSON.
     """
-    payload = request.get_json(silent=True) or {}
-    query = (payload.get("query") or "").strip()
-    if not query:
+    payload = request.get_json(silent=True)
+    query, problem = _validate(payload)
+    if problem:
         # 400 rather than a stack trace: the caller can act on this one.
-        log_run(status="rejected", error="no query in the request body")
-        return jsonify({"error": "Send JSON with a 'query' field, e.g. "
-                                 '{"query": "vintage graphic tee under $30"}'}), 400
+        log_run(status="rejected", stage="validate_request",
+                error_type="validation_error", query=_preview(payload), error=problem)
+        return jsonify({"error": problem, "error_type": "validation_error",
+                        "stage": "validate_request"}), 400
 
     wardrobe = payload.get("wardrobe")
     if not isinstance(wardrobe, dict):
@@ -166,11 +216,29 @@ def ask():
     # Outside the lock: building a response is not work the next caller should
     # be waiting on.
     if failure is not None:
-        log_run(status="crashed", query=query, error=failure, seconds=seconds)
-        return jsonify({"error": failure}), 500
-    log_run(status="ok", query=query,
-            output=session["fit_card"] or session["error"], seconds=seconds)
-    return jsonify(session)
+        # run_agent catches its own failures now, so this should not happen;
+        # if it does, it is still a JSON 500 with a log record.
+        log_run(status="error", stage="run_agent", error_type="internal_error",
+                query=query, error=failure, seconds=seconds)
+        return jsonify({"error": failure, "error_type": "internal_error",
+                        "stage": "run_agent"}), 500
+
+    error_type = session.get("error_type")
+    status = {None: "ok", "no_results": "no_results"}.get(error_type, "error")
+    log_run(status=status, stage=session.get("stage"), error_type=error_type,
+            query=query, output=session["fit_card"] or session["error"],
+            seconds=seconds)
+    return jsonify(session), _HTTP_STATUS.get(error_type, 500)
+
+
+def _preview(payload, limit=200):
+    """What came in, short enough for a log line, whatever shape it was."""
+    if payload is None:
+        raw = request.get_data(as_text=True)
+        return raw[:limit] if raw else None
+    if isinstance(payload, dict) and isinstance(payload.get("query"), str):
+        return payload["query"][:limit]
+    return json.dumps(payload, ensure_ascii=False)[:limit]
 
 
 if __name__ == "__main__":
