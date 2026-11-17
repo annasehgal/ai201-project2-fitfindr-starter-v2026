@@ -331,7 +331,8 @@ Every response carries a `request_id` (also in the `X-Request-ID` header).
 appended for every `/ask` call, including rejected and failed ones. Fields:
 `timestamp`, `request_id`, `status`, `stage`, `error_type`, `query`, `output`
 or `error`, `agent_ms`, `model_calls`, `cache_hits`, `prompt_tokens`,
-`output_tokens`, `duration_ms`. The API key is never logged.
+`output_tokens`, `pacing_wait_ms`, `retry_wait_ms`, `model_retries`,
+`duration_ms`. The API key is never logged.
 
 Read it back with:
 
@@ -343,7 +344,7 @@ grep '"request_id": "<id from the response>"' logs/runs.jsonl
 ### Tests (no API key needed)
 
 ```bash
-python test_failure_handling.py    # capstone failure layer: 7 tests
+python test_failure_handling.py    # capstone failure layer + wait accounting: 10 tests
 python test_search_retry.py        # unit 4 stretch: 10 tests
 python test_generate_retry.py      # unit 4 5xx retry: 8 tests
 ```
