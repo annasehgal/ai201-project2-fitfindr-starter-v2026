@@ -129,5 +129,21 @@ class FailureLayerTest(unittest.TestCase):
         self.assertEqual(self.records()[-1]["status"], "ok")
 
 
+    # ── the request id ties a response to its log line ───────────────────────
+
+    def test_request_id_is_returned_and_logged(self):
+        for kwargs in (dict(json={"query": "graphic tee"}), dict(json={"query": 123})):
+            with self.subTest(body=kwargs):
+                resp = self.ask(**kwargs)
+                rid = resp.get_json()["request_id"]
+                self.assertRegex(rid, r"^[0-9a-f]{12}$")
+                self.assertEqual(resp.headers["X-Request-ID"], rid)
+                record = self.records()[-1]
+                self.assertEqual(record["request_id"], rid)
+                self.assertIsInstance(record["duration_ms"], int)
+        ids = [r["request_id"] for r in self.records()]
+        self.assertEqual(len(ids), len(set(ids)))  # one id per request
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

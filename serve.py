@@ -28,7 +28,10 @@ note above `_one_at_a_time` below — it also decides which gunicorn worker you
 can use.
 
 Unit 9 follow-along (done): every /ask call appends one JSON record to
-logs/runs.jsonl — timestamp, status, query, output or error, and seconds.
+logs/runs.jsonl — timestamp, status, query, output or error, and timing.
+Capstone: each record also carries a request_id (returned to the caller in the
+body and the X-Request-ID header), the stage the run ended at, an error_type,
+and the model calls and tokens that request spent.
 """
 
 import os
@@ -36,15 +39,17 @@ import sys
 import json
 import threading
 import time
+import uuid
 from datetime import datetime, timezone
 
 # config first, and before anything that talks to the model: it loads your .env
 # and fixes the Windows console encoding for every module that imports it.
 import config  # noqa: F401
 
-from flask import Flask, jsonify, request
+from flask import Flask, g, jsonify, request
 from werkzeug.exceptions import HTTPException
 
+import generate
 from agent import run_agent
 from utils.data_loader import get_example_wardrobe
 
@@ -57,7 +62,12 @@ LOG_FILE = config.ROOT / "logs" / "runs.jsonl"
 
 def log_run(**fields):
     """Append one structured record to logs/runs.jsonl and echo it to stdout."""
-    entry = {"timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"), **fields}
+    entry = {"timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+             "request_id": getattr(g, "request_id", None), **fields}
+    started = getattr(g, "started", None)
+    if started is not None:
+        # Whole request, arrival to log line: what the caller actually waited.
+        entry["duration_ms"] = round((time.perf_counter() - started) * 1000)
     line = json.dumps(entry, ensure_ascii=False)
     LOG_FILE.parent.mkdir(exist_ok=True)
     with LOG_FILE.open("a", encoding="utf-8") as f:
@@ -152,7 +162,29 @@ def _unhandled(exc):
     log_run(status="error", stage="serve", error_type="internal_error",
             error=f"{type(exc).__name__}: {exc}")
     return jsonify({"error": "Something went wrong inside the server.",
-                    "error_type": "internal_error", "stage": "serve"}), 500
+                    "error_type": "internal_error", "stage": "serve",
+                    "request_id": g.request_id}), 500
+
+
+@app.before_request
+def _start_request():
+    """Give every request an id and a start time before anything else runs."""
+    g.request_id = uuid.uuid4().hex[:12]
+    g.started = time.perf_counter()
+
+
+@app.after_request
+def _tag_response(response):
+    """The id goes back to the caller, so a reported failure maps to a log line."""
+    response.headers["X-Request-ID"] = getattr(g, "request_id", "")
+    return response
+
+
+def _usage_snapshot():
+    """Model calls, cache hits and tokens spent so far by this process."""
+    tokens = generate.token_counts()
+    return (generate.call_count(), generate._cache_hits,
+            tokens["prompt"], tokens["output"])
 
 
 @app.get("/health")
@@ -178,7 +210,8 @@ def ask():
         log_run(status="rejected", stage="validate_request",
                 error_type="validation_error", query=_preview(payload), error=problem)
         return jsonify({"error": problem, "error_type": "validation_error",
-                        "stage": "validate_request"}), 400
+                        "stage": "validate_request",
+                        "request_id": g.request_id}), 400
 
     wardrobe = payload.get("wardrobe")
     if not isinstance(wardrobe, dict):
@@ -205,13 +238,24 @@ def ask():
     failure = None
     session = None
     with _one_at_a_time:
-        # Time only the agent run: the part a caller actually waits on.
+        # agent_ms is the agent run alone; duration_ms (added in log_run) is
+        # the whole request, including any wait for the lock. Snapshot usage inside the lock, so a queued request's counts are
+        # never mixed into this one's.
+        before = _usage_snapshot()
         started = time.perf_counter()
         try:
             session = run_agent(query, wardrobe)
         except Exception as exc:  # noqa: BLE001 — a 500 with a sentence beats a hang
             failure = f"{type(exc).__name__}: {exc}"
-        seconds = round(time.perf_counter() - started, 2)
+        agent_ms = round((time.perf_counter() - started) * 1000)
+        after = _usage_snapshot()
+    usage = {
+        "agent_ms": agent_ms,
+        "model_calls": after[0] - before[0],
+        "cache_hits": after[1] - before[1],
+        "prompt_tokens": after[2] - before[2],
+        "output_tokens": after[3] - before[3],
+    }
 
     # Outside the lock: building a response is not work the next caller should
     # be waiting on.
@@ -219,16 +263,16 @@ def ask():
         # run_agent catches its own failures now, so this should not happen;
         # if it does, it is still a JSON 500 with a log record.
         log_run(status="error", stage="run_agent", error_type="internal_error",
-                query=query, error=failure, seconds=seconds)
+                query=query, error=failure, **usage)
         return jsonify({"error": failure, "error_type": "internal_error",
-                        "stage": "run_agent"}), 500
+                        "stage": "run_agent", "request_id": g.request_id}), 500
 
     error_type = session.get("error_type")
     status = {None: "ok", "no_results": "no_results"}.get(error_type, "error")
     log_run(status=status, stage=session.get("stage"), error_type=error_type,
             query=query, output=session["fit_card"] or session["error"],
-            seconds=seconds)
-    return jsonify(session), _HTTP_STATUS.get(error_type, 500)
+            **usage)
+    return jsonify({**session, "request_id": g.request_id}), _HTTP_STATUS.get(error_type, 500)
 
 
 def _preview(payload, limit=200):
