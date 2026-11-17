@@ -1907,3 +1907,13 @@ Out of scope:
 - Changing how FitFindr recommends anything: the search matching, the prompts, the outfit and fit-card wording all stay as they were.
 - New retry or timeout logic for the model. `generate.py` already retries 5xx and rate limits, and I'm not rebuilding that.
 - Hosting, a UI, or concurrency. `serve.py` still runs one request at a time, locally (Path B).
+
+**Running It**
+
+Path B — local with logs. The full instructions, tested from a fresh clone, are in [RUNNING.md](RUNNING.md#capstone--run-it-from-a-clean-checkout-path-b). After `pip install -r requirements.txt` and putting `GEMINI_API_KEY` in `.env`, one command starts it:
+
+```bash
+PORT=8000 AI201_CACHE=0 python serve.py
+```
+
+That serves `POST /ask` and `GET /health` on `http://localhost:8000` and appends one JSON record per request to `logs/runs.jsonl`. I didn't host it: the run record committed in this repo is the evidence that it ran. Port 8000 instead of the starter's 5000 is because macOS reserves 5000 for AirPlay Receiver. I found that when my first baseline request got a 403 from macOS instead of reaching FitFindr.

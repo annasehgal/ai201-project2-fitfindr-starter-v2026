@@ -2,6 +2,11 @@
 
 Everything about how the starter works and how to use it.
 
+> **Capstone (Path B, local with logs):** the one-command run path, the
+> environment it needs, and where the structured log goes are in
+> [Capstone — run it from a clean checkout](#capstone--run-it-from-a-clean-checkout-path-b)
+> at the end of this file.
+
 ---
 
 ## Before your first class
@@ -153,6 +158,12 @@ gunicorn serve:app
 that yourself in the follow-along, before you deploy — instrumenting first is
 the point of the session.
 
+> **Now done** (unit 9 follow-along, extended in the capstone): `serve.py`
+> writes one JSON record per request to `logs/runs.jsonl`. On macOS, port
+> 5000 is taken by AirPlay Receiver, so the `curl localhost:5000` above gets a
+> 403 from macOS rather than FitFindr — start it with `PORT=8000` instead (see
+> the capstone section below).
+
 ---
 
 ## Where everything lives
@@ -246,3 +257,93 @@ history is what shows your criteria existed before your results did.
 units.
 
 `results/` is deliberately **not** in `.gitignore`.
+
+---
+
+## Capstone — run it from a clean checkout (Path B)
+
+The capstone runs FitFindr locally behind `serve.py`, with every request
+written to a structured log. Tested from a fresh `git clone` into an empty
+folder on macOS with Python 3.12.3 (2026-11-17): install took about 16 seconds,
+and the first `/ask` returned 200 with a fit card.
+
+### What the environment needs
+
+| Thing | Value |
+|---|---|
+| Python | 3.11, 3.12 or 3.13 (tested on 3.12.3). **Not 3.14** |
+| Dependencies | `requirements.txt` — pinned with lower and upper bounds. Resolved in the tested install to Flask 3.1.3, Werkzeug 3.1.9, google-genai 1.75.0, mcp 1.30.0, python-dotenv 1.1.1, gunicorn 23.0.0 |
+| Environment variable | `GEMINI_API_KEY` (required) — put it in `.env`, which git ignores. Never commit it |
+| Optional variables | `PORT` (default 5000), `AI201_CACHE=0` to turn off the response cache, `AI201_MODEL` (default `gemini-3.5-flash-lite`) |
+| Model files | None. The model is called over the Gemini API; nothing is downloaded |
+| Data files | `data/listings.json` (18.6 KB, 40 listings) and `data/wardrobe_schema.json` (3.3 KB), both in the repo |
+| Network | Outbound HTTPS to the Gemini API |
+
+### Setup (once)
+
+```bash
+git clone <this repo's URL> fitfindr && cd fitfindr
+python3 -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+cp .env.example .env               # then set GEMINI_API_KEY=... in .env
+python test.py                     # optional: checks Python, packages, key and one model call
+```
+
+### Start it — one command
+
+```bash
+PORT=8000 AI201_CACHE=0 python serve.py
+```
+
+- `PORT=8000` because on macOS port 5000 belongs to AirPlay Receiver, and a
+  request to it gets a 403 from macOS, not from FitFindr. Any free port works.
+- `AI201_CACHE=0` makes every request a real model call. Without it, a repeated
+  query is answered from `.cache/` with zero model calls, which is fine for
+  debugging but makes the logged timings and token counts meaningless.
+- It listens on `http://localhost:8000` and runs until Ctrl-C. Windows
+  PowerShell: `$env:PORT=8000; $env:AI201_CACHE=0; python serve.py`.
+
+### Send it a request (second terminal)
+
+```bash
+curl http://localhost:8000/health
+curl -X POST http://localhost:8000/ask -H 'Content-Type: application/json' \
+  -d '{"query": "vintage graphic tee under $30"}'
+# a bad request, to see the failure path:
+curl -X POST http://localhost:8000/ask -H 'Content-Type: application/json' \
+  -d '{"query": 123}'
+```
+
+| Outcome | HTTP status | `error_type` in the body |
+|---|---|---|
+| Fit card returned | 200 | `null` |
+| Nothing in the listings matched | 200 | `no_results` |
+| Malformed or missing input | 400 | `validation_error` |
+| The search tool (MCP) or the model failed | 502 | `tool_error` / `model_error` |
+| Anything unexpected | 500 | `internal_error` |
+
+Every response carries a `request_id` (also in the `X-Request-ID` header).
+
+### Where the log goes
+
+`logs/runs.jsonl`, created on the first request. One JSON object per line,
+appended for every `/ask` call, including rejected and failed ones. Fields:
+`timestamp`, `request_id`, `status`, `stage`, `error_type`, `query`, `output`
+or `error`, `agent_ms`, `model_calls`, `cache_hits`, `prompt_tokens`,
+`output_tokens`, `duration_ms`. The API key is never logged.
+
+Read it back with:
+
+```bash
+tail -n 5 logs/runs.jsonl
+grep '"request_id": "<id from the response>"' logs/runs.jsonl
+```
+
+### Tests (no API key needed)
+
+```bash
+python test_failure_handling.py    # capstone failure layer: 7 tests
+python test_search_retry.py        # unit 4 stretch: 10 tests
+python test_generate_retry.py      # unit 4 5xx retry: 8 tests
+```
