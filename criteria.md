@@ -103,3 +103,99 @@ An empty wardrobe is a normal case for a new user, and `suggest_outfit` is suppo
      A number you missed stays where it is, gets diagnosed, and gets a fix
      attempted. That's where the points are.
      ───────────────────────────────────────────────────────────────────────── -->
+
+---
+
+# Capstone criteria - FitFindr, Shape B (harden against failure)
+
+Written before any capstone results existed. C1-C4 are about the
+failure-handling extension; C1 and C3 are bad paths on purpose. C5 checks that
+the extension didn't break the normal run.
+
+> These were drafted with AI help (Claude) at my request, based on my unit 3
+> criteria and the capstone scope in the README. See How I Used AI under
+> `## Capstone` in the README.
+
+**The fixed inputs every trial uses** (so anyone can re-run them):
+
+- Matching queries: `vintage graphic tee under $30`, `denim jacket`,
+  `black boots under $60`, `floral summer dress`, `oversized hoodie size L`
+- No-match queries: `designer ballgown size XXS under $5`,
+  `silk tuxedo under $3`, `wedding veil`, `astronaut helmet`,
+  `ski boots under $2`
+- Malformed requests: `{}`, `{"query": ""}`, `{"query": 123}`, `["a"]`, and
+  the raw body `not json`
+
+## C1. Malformed requests get a 400, not a crash
+
+For the same 5 malformed requests - `{}`, `{"query": ""}`, `{"query": 123}`,
+`["a"]` and a body that isn't JSON - `/ask` returns HTTP 400 with a JSON body
+whose `error_type` is `validation_error`, and never an HTML page or a 500 - in
+5 of 5 requests, every trial.
+
+**Why this target:**
+Before the capstone, 2 of these 5 (`{"query": 123}` and `["a"]`) crashed with
+Flask's HTML 500 page. Validation is a plain rule that runs before the agent
+and never touches the model, so nothing random can make it miss. One miss
+would mean a bad request still reaches code that can crash.
+
+---
+
+## C2. Every request leaves exactly one log line that matches it
+
+For a batch of 10 requests (the 5 matching queries and the 5 malformed
+requests), every
+response's `request_id` appears in exactly one line of `logs/runs.jsonl`, and
+that line has a `status` and a `duration_ms` - 10 of 10, every trial.
+
+**Why this target:**
+The request_id is only useful if I can always go from a response to its log
+line. Before the capstone, the two requests that crashed left no log record at
+all, so the failures I most needed to see were the ones that were missing. A
+single missing or doubled line means the log can't be trusted, so I expect
+every one.
+
+---
+
+## C3. A model failure is reported with its stage, not a crash
+
+With the server started with an invalid but non-empty `GEMINI_API_KEY`, the
+first 3 matching queries each return HTTP 502 with `error_type` `model_error`, `stage`
+`suggest_outfit`, and the search results still in the response, and each
+leaves a log line with `status` `error` - 3 of 3, every trial.
+
+**Why this target:**
+The model is the part of FitFindr most likely to fail in real use, and a bad
+key fails fast (`generate.py` only retries 5xx and rate limits), so it can be
+triggered the same way every time. The search runs before the model, so the
+listings found should never be thrown away. Any miss means the failure layer
+lost the stage or turned a model problem into a crash.
+
+---
+
+## C4. "Nothing matched" is not logged as a success or an error
+
+For the 5 no-match queries, `/ask` returns HTTP 200 with
+`error_type` `no_results`, the log line has `status` `no_results` (never `ok`
+or `error`) and `model_calls` of 0 - 5 of 5, every trial.
+
+**Why this target:**
+Before the capstone these were logged as `"status": "ok"`, which would make
+the success rate look better than it is. An empty search is a normal answer,
+not a system failure, so it shouldn't be a 5xx either. The branch that stops
+before `suggest_outfit` is a fixed rule, so I expect 5 of 5.
+
+---
+
+## C5. Normal queries still work, and come back in under 10 seconds
+
+For the 5 matching queries, with the cache off (`AI201_CACHE=0`), at
+least 4 of 5 return HTTP 200 with a fit card, `error_type` null, `stage`
+`done`, and a logged `duration_ms` under 10000 - every trial.
+
+**Why this target:**
+The extension wraps every run, so it must not break the normal path. A normal
+run makes 2 model calls, and `generate.py` paces calls to stay under the free
+tier's 15 per minute, so a slow call or a pacing wait can push one run over.
+That is why I allow 1 miss in 5 instead of 5 of 5. Past 10 seconds with no
+answer, a user would think the app had hung.
