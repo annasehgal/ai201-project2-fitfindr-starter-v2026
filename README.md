@@ -1918,6 +1918,73 @@ PORT=8000 AI201_CACHE=0 python serve.py
 
 That serves `POST /ask` and `GET /health` on `http://localhost:8000` and appends one JSON record per request to `logs/runs.jsonl`. I didn't host it: the run record committed in this repo is the evidence that it ran. Port 8000 instead of the starter's 5000 is because macOS reserves 5000 for AirPlay Receiver. I found that when my first baseline request got a 403 from macOS instead of reaching FitFindr.
 
+**Instrumentation**
+
+*Format.* JSON Lines: one JSON object per request, appended to `logs/runs.jsonl` by `serve.py::log_run`, and echoed to stdout. Every `/ask` call writes exactly one record, whether it succeeded, found nothing, was rejected or failed. That includes requests that never reach the agent, because rejection at `_validate` and the last-resort `@app.errorhandler(Exception)` both log too. The file is committed in this repo as the Path B run record. The API key is never written to it.
+
+*Fields, and why each is there:*
+
+| Field | What it holds | Why it's useful |
+|---|---|---|
+| `timestamp` | UTC, to the second | When it happened. Lines up with rate-limit minutes |
+| `request_id` | 12 hex chars, also returned in the response body and `X-Request-ID` header | Goes from a user's error report to the exact log line (`grep`) |
+| `status` | `ok`, `no_results`, `rejected` or `error` | The one field to count for a success rate. "Found nothing" is not a success or a failure |
+| `stage` | Where the run ended: `validate_request`, `search_listings`, `search_listings_retry`, `suggest_outfit`, `create_fit_card`, `done`, … | Says *where* a failure happened without reading a stack trace |
+| `error_type` | `validation_error`, `no_results`, `tool_error`, `model_error`, `internal_error`, or null | Says *what kind* of failure it was, and maps to the HTTP status (400 / 200 / 502 / 502 / 500) |
+| `query` | What came in, whatever its shape (raw body for non-JSON, truncated to 200 chars) | Lets me replay the request that went wrong |
+| `output` / `error` | The fit card, or the message the user was shown | What went out |
+| `duration_ms` | Arrival to log line, whole request | What the caller waited |
+| `agent_ms` | `run_agent` alone | Separates agent time from time queued behind another request |
+| `model_calls`, `cache_hits` | Calls actually sent to Gemini, and answers served from cache | A cached run costs nothing and would distort timing and cost |
+| `prompt_tokens`, `output_tokens` | As reported by the Gemini API on each response | The measured cost of the request |
+| `pacing_wait_ms`, `retry_wait_ms`, `model_retries` | Time spent waiting on the 15/min limiter, time sleeping between retries, and why each retry happened | Added as **The Improvement** below. Says *why* a slow run was slow |
+
+*Real entries*, copied from `logs/runs.jsonl`. There are twelve, covering every status: successes, two failures with an invalid key, three rejected bad inputs, two no-match queries, one run that waited 23 s on pacing, and one with a live `server_busy` retry. The first eleven are from the `--label after` evaluation, and the last is from the cost run.
+
+```json
+{"timestamp": "2026-11-17T20:30:46+00:00", "request_id": "2d500fa5cdf0", "status": "ok", "stage": "done", "error_type": null, "query": "vintage graphic tee under $30", "output": "Channel your inner 2000s pop star with this adorable Y2K Baby Tee — Butterfly Print, priced at just $18.00 on Depop! Style it with baggy jeans and sneakers for a breezy streetwear vibe, or add combat boots and a zip hoodie for a touch of edgy grunge. Grab it before it’s gone and give your wardrobe the ultimate retro glow-up!", "agent_ms": 4723, "model_calls": 2, "cache_hits": 0, "prompt_tokens": 782, "output_tokens": 279, "pacing_wait_ms": 0, "retry_wait_ms": 0, "model_retries": [], "duration_ms": 4724}
+{"timestamp": "2026-11-17T20:30:54+00:00", "request_id": "0a3701fb1bbb", "status": "ok", "stage": "done", "error_type": null, "query": "denim jacket", "output": "Just scored this vintage Wrangler Denim Jacket — Light Wash, Cropped for only $42.00 over on Poshmark, and it’s the ultimate streetwear staple. I love the structured shoulders for layering over a hoodie, but it looks just as effortless paired with baggy denim for that high-contrast vintage vibe. Run, don't walk, to grab your next favorite closet blank canvas!", "agent_ms": 8422, "model_calls": 2, "cache_hits": 0, "prompt_tokens": 798, "output_tokens": 306, "pacing_wait_ms": 0, "retry_wait_ms": 0, "model_retries": [], "duration_ms": 8423}
+{"timestamp": "2026-11-17T20:30:57+00:00", "request_id": "9517d92de05b", "status": "ok", "stage": "done", "error_type": null, "query": "black boots under $60", "output": "Channel total 90s grunge with this vintage Woolrich Oversized Flannel Shirt — Plaid Red/Black, priced at just $22.00 on thredUp. Whether you layer it over a white tank and combat boots or style it open with a zip hoodie and wide-leg trousers, this timeless piece brings effortless streetwear energy to your wardrobe.", "agent_ms": 3030, "model_calls": 2, "cache_hits": 0, "prompt_tokens": 791, "output_tokens": 288, "pacing_wait_ms": 0, "retry_wait_ms": 0, "model_retries": [], "duration_ms": 3031}
+{"timestamp": "2026-11-17T20:31:04+00:00", "request_id": "42dba583a192", "status": "rejected", "stage": "validate_request", "error_type": "validation_error", "query": "{}", "error": "Send JSON with a 'query' field, e.g. {\"query\": \"vintage graphic tee under $30\"}", "duration_ms": 0}
+{"timestamp": "2026-11-17T20:31:04+00:00", "request_id": "df24d6bee0f7", "status": "rejected", "stage": "validate_request", "error_type": "validation_error", "query": "", "error": "'query' is empty. Say what you're looking for, e.g. {\"query\": \"vintage graphic tee under $30\"}", "duration_ms": 0}
+{"timestamp": "2026-11-17T20:31:04+00:00", "request_id": "a3146970c7f5", "status": "rejected", "stage": "validate_request", "error_type": "validation_error", "query": "{\"query\": 123}", "error": "'query' must be a string, not int, e.g. {\"query\": \"vintage graphic tee under $30\"}", "duration_ms": 0}
+{"timestamp": "2026-11-17T20:31:05+00:00", "request_id": "6fe9799a3a59", "status": "no_results", "stage": "search_listings_retry", "error_type": "no_results", "query": "designer ballgown size XXS under $5", "output": "Nothing in the listings matched description 'designer ballgown', under $5.\nThings to change: try broader words — 'jacket' finds more than 'cropped corduroy jacket'; raise the price ceiling above $5.", "agent_ms": 1379, "model_calls": 0, "cache_hits": 0, "prompt_tokens": 0, "output_tokens": 0, "pacing_wait_ms": 0, "retry_wait_ms": 0, "model_retries": [], "duration_ms": 1381}
+{"timestamp": "2026-11-17T20:31:06+00:00", "request_id": "b708064bf418", "status": "no_results", "stage": "search_listings", "error_type": "no_results", "query": "silk tuxedo under $3", "output": "Nothing in the listings matched description 'silk tuxedo', under $3.\nThings to change: try broader words — 'jacket' finds more than 'cropped corduroy jacket'; raise the price ceiling above $3.", "agent_ms": 643, "model_calls": 0, "cache_hits": 0, "prompt_tokens": 0, "output_tokens": 0, "pacing_wait_ms": 0, "retry_wait_ms": 0, "model_retries": [], "duration_ms": 643}
+{"timestamp": "2026-11-17T20:31:45+00:00", "request_id": "f3567a510e36", "status": "ok", "stage": "done", "error_type": null, "query": "black boots under $60", "output": "Scored this absolute holy grail Oversized Flannel Shirt — Plaid Red/Black on thredUp for just $22.00, and the vintage Woolrich quality is unmatched! Whether I'm leaning into a 90s grunge streetwear vibe or mixing cozy textures with tailored trousers, this piece is the ultimate effortless layering staple. Run, don't walk, to grab your next thrifted obsession!", "agent_ms": 29350, "model_calls": 2, "cache_hits": 0, "prompt_tokens": 835, "output_tokens": 343, "pacing_wait_ms": 22982, "retry_wait_ms": 0, "model_retries": [], "duration_ms": 29351}
+{"timestamp": "2026-11-17T20:32:00+00:00", "request_id": "7f76e23903b8", "status": "error", "stage": "suggest_outfit", "error_type": "model_error", "query": "vintage graphic tee under $30", "output": "The model couldn't be reached, so the outfit and caption steps didn't run. The search worked — 10 listing(s) were found. Check GEMINI_API_KEY in your .env, then run the same query again.\nWhat the service said: The model rejected your API key. Check GEMINI_API_KEY in your .env file, or create a fresh key at aistudio.google.com.", "agent_ms": 2022, "model_calls": 1, "cache_hits": 0, "prompt_tokens": 0, "output_tokens": 0, "pacing_wait_ms": 0, "retry_wait_ms": 0, "model_retries": [], "duration_ms": 2023}
+{"timestamp": "2026-11-17T20:32:01+00:00", "request_id": "8410bc381afc", "status": "error", "stage": "suggest_outfit", "error_type": "model_error", "query": "denim jacket", "output": "The model couldn't be reached, so the outfit and caption steps didn't run. The search worked — 8 listing(s) were found. Check GEMINI_API_KEY in your .env, then run the same query again.\nWhat the service said: The model rejected your API key. Check GEMINI_API_KEY in your .env file, or create a fresh key at aistudio.google.com.", "agent_ms": 826, "model_calls": 1, "cache_hits": 0, "prompt_tokens": 0, "output_tokens": 0, "pacing_wait_ms": 0, "retry_wait_ms": 0, "model_retries": [], "duration_ms": 827}
+{"timestamp": "2026-11-17T20:39:18+00:00", "request_id": "b4cb81f22638", "status": "ok", "stage": "done", "error_type": null, "query": "oversized hoodie size L", "output": "Nothing beats finding the ultimate layering piece, and this Chunky Brown Knit Cardigan for just $35.00 on Depop is pure cottagecore goldmine energy. Whether you're leaning into effortless earth tones with wide-leg trousers or mixing textures with dark wash denim and combat boots, it’s the coziest oversized staple your wardrobe needs right now. Grab it before it’s gone!", "agent_ms": 6016, "model_calls": 3, "cache_hits": 0, "prompt_tokens": 762, "output_tokens": 271, "pacing_wait_ms": 0, "retry_wait_ms": 2057, "model_retries": ["server_busy"], "duration_ms": 6017}
+```
+
+The same file also holds every other run from this session. The two inputs that crashed with an HTML 500 before the capstone (`{"query": 123}` and `["a"]`) left no record at the time, so their "before" can't be shown from the log. **What This Extends** describes it, and the third `rejected` line above is `{"query": 123}` after the fix.
+
+**What It Costs**
+
+*What I measured.* The tokens each request actually spent, as reported by the Gemini API (`usage_metadata` on each response, summed per request by `generate.py` and logged by `serve.py`), plus model calls and wall-clock seconds per request. I ran `python measure_cost.py`: 10 representative full runs (queries that match listings, so both model calls happen), cache off, 9 s apart so the pacing limiter didn't add waiting. Every number below is read from that request's own log line. The output is in `results/capstone_cost.md`.
+
+| # | query | model calls | prompt tokens | output tokens | total tokens | duration_ms |
+|---|---|---|---|---|---|---|
+| 1 | vintage graphic tee under $30 | 2 | 785 | 300 | 1085 | 11216 |
+| 2 | denim jacket | 2 | 768 | 266 | 1034 | 3645 |
+| 3 | black boots under $60 | 2 | 772 | 288 | 1060 | 4676 |
+| 4 | floral summer dress | 2 | 861 | 340 | 1201 | 3318 |
+| 5 | oversized hoodie size L | 3 (one `server_busy` retry) | 762 | 271 | 1033 | 6017 |
+| 6 | leather jacket | 2 | 789 | 282 | 1071 | 11585 |
+| 7 | white sneakers | 2 | 837 | 336 | 1173 | 7405 |
+| 8 | plaid skirt | 2 | 798 | 308 | 1106 | 15748 |
+| 9 | knit sweater | 2 | 795 | 309 | 1104 | 6698 |
+| 10 | cargo pants | 2 | 818 | 307 | 1125 | 9727 |
+
+*Average per run:* **1099.2 tokens** (798.5 prompt + 300.7 output), **2.1 model calls**, **8.00 s** wall-clock (min 3.32, max 15.75).
+
+*In money:* this runs on the Gemini free tier, so the actual spend for these runs was **$0**. I'm not converting tokens to dollars, because that would mean copying a per-token price off a pricing page rather than measuring anything. The measured cost is tokens and seconds, and anyone on a paid tier can multiply the token counts by their own rate.
+
+*100 a day.* This assumes one request per user. If a user asks k times, multiply by k.
+- Tokens: 1099.2 × 100 = **109,920 tokens/day** (798.5 × 100 = 79,850 prompt + 300.7 × 100 = 30,070 output).
+- Model calls: 2.1 × 100 = **210 calls/day**.
+- Compute time: 8.00 s × 100 = **800 s/day ≈ 13.3 minutes** of serialized server time. `serve.py` runs one request at a time, so 100 requests spread over a day never queue. But the 15-calls-per-minute pacing caps a burst at about 7 full runs a minute, so 100 users arriving in the same minute would take roughly 14 minutes to clear.
+- A no-match query costs 0 tokens and about 1.2 s, and a rejected request costs 0 tokens and about 0 ms, so a mix with some bad or empty queries costs less than this.
+
 **Run Log and Verdicts**
 
 The runs were made after `criteria.md` was committed (`add capstone criteria`, 54da237). I ran `python run_capstone_eval.py --label before`. It does three separate trials, and each trial starts its own `serve.py` processes on port 8010 with the cache off: one with my real key for C1, C2, C4 and C5, and one with an invalid key for C3. There is a 65 s cooldown between trials, and no code changed between them. Every check is applied exactly as `criteria.md` words it, by `check_c1` … `check_c5` in `run_capstone_eval.py`. The full per-request evidence is in `results/capstone_before.md` and `results/capstone_before.json`.
@@ -2004,4 +2071,27 @@ C5: a full run through `create_fit_card`, HTTP 200:
   ```json
   {"timestamp": "2026-11-17T20:33:47+00:00", "request_id": "d08ea22089a5", "status": "ok", "stage": "done", "error_type": null, "query": "oversized hoodie size L", "output": "Get ready to live in this Chunky Brown Knit Cardigan for all your cozy cottagecore days. Grab it now on Depop for just $35.00 to instantly elevate your wardrobe with effortless earth tones. Style it over a white tank and dark baggy denim for the ultimate vintage streetwear contrast!", "agent_ms": 12949, "model_calls": 2, "cache_hits": 0, "prompt_tokens": 803, "output_tokens": 291, "pacing_wait_ms": 0, "retry_wait_ms": 0, "model_retries": [], "duration_ms": 12950}
   ```
-- **No retries happened in the rerun**, so `retry_wait_ms` and `model_retries` were only exercised by the unit test with a fake 503, not by a live service error.
+- **No retries happened in the rerun itself**, but one happened live during the cost measurement right after it (request `b4cb81f22638`). Gemini returned a 503, `generate.py` retried, and the log line records `"model_calls": 3, "retry_wait_ms": 2057, "model_retries": ["server_busy"]`. That is the 3-call case from the first run, now explained by the log instead of left as a mystery. (The full line is the last entry under **Instrumentation**.)
+
+**What's Still Broken**
+
+All five criteria were MET in both run sets, so there's no unmet criterion to explain. That's partly because some targets were set low, and the run log shows real problems my criteria didn't measure.
+
+*Targets I'd tighten.*
+- **C5:** from "4 of 5 under 10 s, measured after a cooldown" to **"5 of 5 under 10 s, measured at a steady 10 requests a minute"**. The current wording let the test order decide the result. The same queries sent later in the same minute took 16–61 s in C2, and in the cost run 3 of 10 full runs took 11.2–15.7 s with no waiting at all. The tighter version would have missed, and it would be measuring what a user actually sees.
+- **C1:** the least demanding. It was a fixed rule already covered by unit tests. I'd widen it to 10 kinds of malformed input, adding cases I haven't tested: a query over 1,000 characters, a `wardrobe` that isn't an object, and a wrong `Content-Type`.
+
+*What's still wrong, what I'd do, and why I stopped:*
+- **The model call has no timeout.** `generate.py` sets none on `generate_content`, so a Gemini call that never returns would hold `serve.py`'s one-at-a-time lock and stall every request behind it. That's the one failure this layer can't turn into a structured response. I'd pass a request timeout through the client's HTTP options and map it to `error_type: "model_error"` (or a new `timeout`). I stopped because I put new retry/timeout logic out of scope in **The Shape**, and I only had one improvement.
+- **A burst gets slow with no signal to the user.** Pacing waits of 23 s and more show up in the log now, but the caller just waits. I'd fail fast with a 503 and `Retry-After` when the pacing wait would exceed a few seconds. I stopped because that changes what users get, and it's a bigger decision than one improvement.
+- **The search sometimes returns the wrong kind of item.** `black boots under $60` returned an oversized flannel shirt (it matched on "black"), and `oversized hoodie size L` returned a knit cardigan. That's FitFindr's keyword search, which I put out of scope as core recommendation behaviour.
+- **`tool_error` and `internal_error` were only exercised by fakes.** `test_failure_handling.py` covers them, but I never broke the MCP server live. Doing that would mean adding a fault switch to the production code just for testing, and I decided against it.
+
+*If this were a real system and I had one more unit,* I'd add a timeout to the model call first. Every other failure I found now ends in a JSON response with a stage and an error type, but a hung Gemini call would still block the whole server, because requests run one at a time.
+
+**How I Used AI**
+
+I did this capstone in one long session with Claude Code (Claude Opus). It read the repo, ran the tests and the server, and wrote code and README text. I made every commit myself, by hand, after reading what it had changed. Two moments from the session:
+
+1. **Writing the criteria.** I first set it up so Claude would stop and leave `criteria.md` for me, and it did: it created five empty slots and refused to run the official trials until they were filled. Then I asked it to draft them from my unit 3 criteria and the capstone goal. It said the course brief asks for criteria the student writes, drafted five in my unit 3 style, and added a line to the file saying they were AI-drafted. Before handing them back it changed one thing: it ran every candidate query through `search_listings` to confirm that the five "matching" queries really match and the five "no-match" queries really return nothing, then pinned that exact list of inputs into `criteria.md` so someone else could score the criteria without asking me. I committed them as drafted, with that disclosure kept, and before any results existed (`add capstone criteria`, 54da237, comes before `record initial capstone results`, 161f95e). Because I didn't write them myself, I'm flagging that here rather than presenting them as my own.
+2. **Checking the results instead of taking the all-MET table.** The first run came back MET on all five. Claude didn't stop at the table: it went through the per-request data and pointed out that C5 only passed because the runner measures it after a cooldown, while the same queries took up to 61 s later in the minute. It also found that the log couldn't say why. I agreed the next step should follow from that, so the one improvement was recording pacing and retry waits rather than a change chosen in advance. The rerun showed it working, but it also showed C5 dropping to 4/5, and that went into the README as a thinner margin instead of being hidden. Every number in this section came from a run in `results/` or `logs/runs.jsonl`. I also chose to make every commit myself rather than let the AI commit, so the history shows the order things actually happened in.
