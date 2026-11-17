@@ -27,19 +27,16 @@ web server has to be. The reason is worth reading before you deploy: see the
 note above `_one_at_a_time` below — it also decides which gunicorn worker you
 can use.
 
-⚠️ There is deliberately NO logging, NO timing and NO request counting in this
-file. That is unit 9's follow-along: you instrument this yourself, first, and
-then deploy it. A structured log you were handed teaches you nothing about
-what belongs in one — and the timing field is the one everybody skips.
+Unit 9 follow-along (done): every /ask call appends one JSON record to
+logs/runs.jsonl — timestamp, status, query, output or error, and seconds.
 """
 
 import os
 import sys
-import threading
-# capstone?
 import json
-from datetime import datetime, timezone
+import threading
 import time
+from datetime import datetime, timezone
 
 # config first, and before anything that talks to the model: it loads your .env
 # and fixes the Windows console encoding for every module that imports it.
@@ -51,17 +48,14 @@ from agent import run_agent
 from utils.data_loader import get_example_wardrobe
 
 app = Flask(__name__)
-# LOG_FILE = config.ROOT / "logs" / "runs.jsonl"
 
-# def log_run(**fields):
-#    entry = {"timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"), **fields}
-    # line = json.dumps(entry, ensure_ascii=False)
-    # LOG_FILE.parent.mkdir(exist_ok=True)
-    # with LOG_FILE.open("a", encoding="utf-8") as f:
-    #   f.write(line + "\n")
-    # print(line, flush=True)
+# Unit 9 follow-along: one JSON object per line, appended for every /ask call,
+# whether it succeeded, found nothing, was rejected or crashed.
 LOG_FILE = config.ROOT / "logs" / "runs.jsonl"
+
+
 def log_run(**fields):
+    """Append one structured record to logs/runs.jsonl and echo it to stdout."""
     entry = {"timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"), **fields}
     line = json.dumps(entry, ensure_ascii=False)
     LOG_FILE.parent.mkdir(exist_ok=True)
@@ -161,22 +155,21 @@ def ask():
     failure = None
     session = None
     with _one_at_a_time:
-        #capstone timing log -demo
+        # Time only the agent run: the part a caller actually waits on.
         started = time.perf_counter()
         try:
             session = run_agent(query, wardrobe)
         except Exception as exc:  # noqa: BLE001 — a 500 with a sentence beats a hang
             failure = f"{type(exc).__name__}: {exc}"
-        seconds = round(time.perf_counter()- started, 2)
+        seconds = round(time.perf_counter() - started, 2)
 
     # Outside the lock: building a response is not work the next caller should
     # be waiting on.
     if failure is not None:
         log_run(status="crashed", query=query, error=failure, seconds=seconds)
         return jsonify({"error": failure}), 500
-    #capstone
-    log_run(query=query, outpu=session["fit_card"] or session["error"],
-            seconds=seconds)
+    log_run(status="ok", query=query,
+            output=session["fit_card"] or session["error"], seconds=seconds)
     return jsonify(session)
 
 
