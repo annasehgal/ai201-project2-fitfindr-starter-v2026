@@ -31,7 +31,8 @@ Unit 9 follow-along (done): every /ask call appends one JSON record to
 logs/runs.jsonl — timestamp, status, query, output or error, and timing.
 Capstone: each record also carries a request_id (returned to the caller in the
 body and the X-Request-ID header), the stage the run ended at, an error_type,
-and the model calls and tokens that request spent.
+and the model calls and tokens that request spent, plus how long it waited on
+the pacing limiter and on retries, and why each retry happened.
 """
 
 import os
@@ -181,10 +182,12 @@ def _tag_response(response):
 
 
 def _usage_snapshot():
-    """Model calls, cache hits and tokens spent so far by this process."""
+    """Model calls, cache hits, tokens and waiting done so far by this process."""
     tokens = generate.token_counts()
+    waits = generate.wait_counts()
     return (generate.call_count(), generate._cache_hits,
-            tokens["prompt"], tokens["output"])
+            tokens["prompt"], tokens["output"],
+            waits["pacing_wait_s"], waits["retry_wait_s"], waits["retry_reasons"])
 
 
 @app.get("/health")
@@ -255,6 +258,10 @@ def ask():
         "cache_hits": after[1] - before[1],
         "prompt_tokens": after[2] - before[2],
         "output_tokens": after[3] - before[3],
+        # Capstone improvement: why a slow run was slow.
+        "pacing_wait_ms": round((after[4] - before[4]) * 1000),
+        "retry_wait_ms": round((after[5] - before[5]) * 1000),
+        "model_retries": after[6][len(before[6]):],
     }
 
     # Outside the lock: building a response is not work the next caller should

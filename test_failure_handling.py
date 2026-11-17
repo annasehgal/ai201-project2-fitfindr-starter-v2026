@@ -145,5 +145,65 @@ class FailureLayerTest(unittest.TestCase):
         self.assertEqual(len(ids), len(set(ids)))  # one id per request
 
 
+
+class WaitAccountingTest(unittest.TestCase):
+    """Capstone improvement: retries and pacing waits are counted, not just printed."""
+
+    def setUp(self):
+        import config
+        import generate
+        from google.genai import errors
+        from types import SimpleNamespace
+        self.generate, self.errors = generate, errors
+        generate._call_times.clear()
+        self.calls = mock.Mock()
+        client = SimpleNamespace(models=SimpleNamespace(generate_content=self.calls))
+        self.ok = SimpleNamespace(text="a fit card", usage_metadata=None)
+        patches = [
+            mock.patch.object(generate, "_get_client", return_value=client),
+            mock.patch.object(generate.time, "sleep"),
+            mock.patch("random.uniform", return_value=0.5),
+            mock.patch.object(config, "CACHE_ENABLED", False),
+            contextlib.redirect_stderr(io.StringIO()),
+        ]
+        for p in patches:
+            p.__enter__()
+            self.addCleanup(p.__exit__, None, None, None)
+
+    def test_server_busy_retry_is_counted_with_its_wait(self):
+        busy = self.errors.ServerError(503, {"error": {"code": 503, "message": "high demand",
+                                                       "status": "UNAVAILABLE"}})
+        self.calls.side_effect = [busy, self.ok]
+        before = self.generate.wait_counts()
+        self.generate.generate("hi", cache=False)
+        after = self.generate.wait_counts()
+        self.assertEqual(after["retry_reasons"][len(before["retry_reasons"]):], ["server_busy"])
+        self.assertAlmostEqual(after["retry_wait_s"] - before["retry_wait_s"], 2.5)
+
+    def test_pacing_wait_is_counted(self):
+        import config
+        self.calls.return_value = self.ok
+        with mock.patch.object(config, "REQUESTS_PER_MINUTE", 1):
+            before = self.generate.wait_counts()["pacing_wait_s"]
+            self.generate.generate("one", cache=False)
+            self.generate.generate("two", cache=False)  # must wait for the window
+            after = self.generate.wait_counts()["pacing_wait_s"]
+        self.assertGreater(after - before, 50)
+
+    def test_serve_logs_the_wait_fields(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        log = Path(tmp.name) / "runs.jsonl"
+        self.calls.return_value = self.ok
+        with mock.patch.object(serve, "LOG_FILE", log), \
+                mock.patch.object(agent, "call_tool", return_value=[LISTING]), \
+                contextlib.redirect_stdout(io.StringIO()):
+            serve.app.test_client().post("/ask", json={"query": "graphic tee"})
+        record = json.loads(log.read_text().splitlines()[-1])
+        for field in ("pacing_wait_ms", "retry_wait_ms", "model_retries"):
+            self.assertIn(field, record)
+        self.assertEqual(record["model_retries"], [])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

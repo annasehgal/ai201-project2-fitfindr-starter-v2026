@@ -45,6 +45,14 @@ _output_tokens = 0
 _client = None
 _budget_warned = False
 
+# Capstone improvement: where a slow run's time went. Before this, a retry or a
+# pacing wait was only printed to stderr, so a 61 s run in the log looked the
+# same whether the model was slow, the limiter was waiting, or the service had
+# pushed back. serve.py snapshots these around each request and logs the delta.
+_pacing_wait_s = 0.0      # time slept in _wait_for_slot (our own 15/min limiter)
+_retry_wait_s = 0.0       # time slept between retries the service forced
+_retry_reasons: list[str] = []  # one entry per retry: "rate_limited" or "server_busy"
+
 # Temporary server-side errors, retried a few times with backoff + jitter.
 _SERVER_BUSY_CODES = {500, 502, 503, 504}
 _SERVER_BUSY_RETRIES = 3
@@ -106,6 +114,7 @@ def clear_cache() -> int:
 
 def _wait_for_slot() -> None:
     """Sleep, if we've used up this minute's allowance."""
+    global _pacing_wait_s
     now = time.monotonic()
     _call_times[:] = [t for t in _call_times if now - t < 60.0]
 
@@ -124,6 +133,7 @@ def _wait_for_slot() -> None:
                 flush=True,
             )
         time.sleep(sleep_for)
+        _pacing_wait_s += sleep_for
         _call_times[:] = [t for t in _call_times if time.monotonic() - t < 60.0]
 
 
@@ -159,6 +169,21 @@ def usage() -> str:
 
 def call_count() -> int:
     return _session_calls
+
+
+def wait_counts() -> dict:
+    """
+    Capstone: how much of this process's time went to waiting, and why.
+
+    Cumulative, like token_counts(). Take a snapshot before and after a run
+    and subtract to get one run's share.
+    """
+    return {
+        "pacing_wait_s": _pacing_wait_s,
+        "retry_wait_s": _retry_wait_s,
+        "retries": len(_retry_reasons),
+        "retry_reasons": list(_retry_reasons),
+    }
 
 
 def token_counts() -> dict:
@@ -292,7 +317,7 @@ def generate(
     Every call in this course goes through here. If you need to change how the
     model is called, change it in this one place.
     """
-    global _session_calls, _cache_hits
+    global _session_calls, _cache_hits, _retry_wait_s
 
     use_cache = cache and config.CACHE_ENABLED
     temperature = config.TEMPERATURE if temperature is None else temperature
@@ -356,6 +381,8 @@ def generate(
                     file=sys.stderr,
                     flush=True,
                 )
+                _retry_reasons.append("server_busy")
+                _retry_wait_s += backoff
                 time.sleep(backoff)
                 continue
             if not rate_limited:
@@ -368,6 +395,8 @@ def generate(
                 file=sys.stderr,
                 flush=True,
             )
+            _retry_reasons.append("rate_limited")
+            _retry_wait_s += backoff
             time.sleep(backoff)
 
     raise RuntimeError(
