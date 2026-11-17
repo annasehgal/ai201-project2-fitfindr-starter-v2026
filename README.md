@@ -1917,3 +1917,51 @@ PORT=8000 AI201_CACHE=0 python serve.py
 ```
 
 That serves `POST /ask` and `GET /health` on `http://localhost:8000` and appends one JSON record per request to `logs/runs.jsonl`. I didn't host it: the run record committed in this repo is the evidence that it ran. Port 8000 instead of the starter's 5000 is because macOS reserves 5000 for AirPlay Receiver. I found that when my first baseline request got a 403 from macOS instead of reaching FitFindr.
+
+**Run Log and Verdicts**
+
+The runs were made after `criteria.md` was committed (`add capstone criteria`, 54da237). I ran `python run_capstone_eval.py --label before`. It does three separate trials, and each trial starts its own `serve.py` processes on port 8010 with the cache off: one with my real key for C1, C2, C4 and C5, and one with an invalid key for C3. There is a 65 s cooldown between trials, and no code changed between them. Every check is applied exactly as `criteria.md` words it, by `check_c1` … `check_c5` in `run_capstone_eval.py`. The full per-request evidence is in `results/capstone_before.md` and `results/capstone_before.json`.
+
+| Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
+|---|---|---|---|---|---|
+| 1. Malformed requests get a 400, not a crash | 5 of 5 | 5/5 | 5/5 | 5/5 | MET |
+| 2. Every request leaves exactly one matching log line | 10 of 10 | 10/10 | 10/10 | 10/10 | MET |
+| 3. A model failure is reported with its stage, not a crash | 3 of 3 | 3/3 | 3/3 | 3/3 | MET |
+| 4. "Nothing matched" is not logged as success or error | 5 of 5 | 5/5 | 5/5 | 5/5 | MET |
+| 5. Normal queries work and come back in under 10 s | 4 of 5 | 5/5 | 5/5 | 5/5 | MET |
+
+The model runs really were repeated: the C5 fit cards differ in wording across trials, and C5 `duration_ms` ranged from 2881 to 7419 across the 15 runs.
+
+Real output, all from trial 1, copied from `results/capstone_before.json`:
+
+C1: `serve.py::_validate` rejecting `{"query": 123}` at the request boundary. The response was HTTP 400, and this is its log line, written by `serve.py::log_run`:
+```json
+{"timestamp": "2026-11-17T20:21:27+00:00", "request_id": "d47024e0149f", "status": "rejected", "stage": "validate_request", "error_type": "validation_error", "query": "{\"query\": 123}", "error": "'query' must be a string, not int, e.g. {\"query\": \"vintage graphic tee under $30\"}", "duration_ms": 0}
+```
+
+C2: the response for `floral summer dress` carried `"request_id": "04c36b1e4eed"`, and exactly one line in `logs/runs.jsonl` has that id:
+```json
+{"timestamp": "2026-11-17T20:23:04+00:00", "request_id": "04c36b1e4eed", "status": "ok", "stage": "done", "error_type": null, "query": "floral summer dress", "output": "Channel your inner 90s icon with this gorgeous 90s Silk Slip Dress — Floral, Midi Length, featuring a dreamy grunge-meets-romance vibe that makes effortless layering a total breeze. Available now on my Depop for just $30.00, it's ready to be styled with your favorite combat boots or chunky sneakers for that ultimate model-off-duty aesthetic!", "agent_ms": 61283, "model_calls": 3, "cache_hits": 0, "prompt_tokens": 852, "output_tokens": 329, "duration_ms": 61284}
+```
+
+C3: with an invalid key, `generate.generate` raised `ModelUnavailable` inside `tools.suggest_outfit`, and `agent.run_agent` caught it. The response was HTTP 502 with all 10 search results still in the body:
+```json
+{"timestamp": "2026-11-17T20:23:10+00:00", "request_id": "f9ba67e72758", "status": "error", "stage": "suggest_outfit", "error_type": "model_error", "query": "vintage graphic tee under $30", "output": "The model couldn't be reached, so the outfit and caption steps didn't run. The search worked — 10 listing(s) were found. Check GEMINI_API_KEY in your .env, then run the same query again.\nWhat the service said: The model rejected your API key. Check GEMINI_API_KEY in your .env file, or create a fresh key at aistudio.google.com.", "agent_ms": 1855, "model_calls": 1, "cache_hits": 0, "prompt_tokens": 0, "output_tokens": 0, "duration_ms": 1857}
+```
+
+C4: `agent.run_agent` stopped at the branch after the size-dropped retry (`stage: search_listings_retry`). The response was HTTP 200 with `error_type: no_results`:
+```json
+{"timestamp": "2026-11-17T20:21:28+00:00", "request_id": "07da94f6bad1", "status": "no_results", "stage": "search_listings_retry", "error_type": "no_results", "query": "designer ballgown size XXS under $5", "output": "Nothing in the listings matched description 'designer ballgown', under $5.\nThings to change: try broader words — 'jacket' finds more than 'cropped corduroy jacket'; raise the price ceiling above $5.", "agent_ms": 1231, "model_calls": 0, "cache_hits": 0, "prompt_tokens": 0, "output_tokens": 0, "duration_ms": 1232}
+```
+
+C5: a full run through `create_fit_card`, HTTP 200:
+```json
+{"timestamp": "2026-11-17T20:21:03+00:00", "request_id": "dbe720b9c815", "status": "ok", "stage": "done", "error_type": null, "query": "vintage graphic tee under $30", "output": "Channel your inner 2000s pop star with this dreamy Y2K Baby Tee — Butterfly Print, listed on Depop right now for just $18.00. Whether you dress it down with baggy jeans for a classic streetwear vibe or toughen it up with wide-leg trousers and combat boots, this fitted graphic tee is insanely versatile. Grab it before someone else steals your look!", "agent_ms": 3939, "model_calls": 2, "cache_hits": 0, "prompt_tokens": 800, "output_tokens": 297, "duration_ms": 3942}
+```
+
+*Diagnosis.* There were no misses, so no criterion needs a stage-and-mechanism diagnosis. But all five MET doesn't mean nothing is wrong, and the run log shows two things my criteria didn't catch:
+
+1. **C5 was protected by the order of the test, not by the system.** The runner sends C5 first, right after a 65 s cooldown. The same five matching queries sent again in C2, later in the same minute, took 16051, 61284, 29165 and 31631 ms in four of the fifteen C2 runs. C2 has no timing target, so all four passed C2. If C5 had been measured there, it would have missed. The stage is `generate.py::_wait_for_slot`, which runs before each model call in `suggest_outfit` and `create_fit_card`. The mechanism: it holds one process-wide sliding window of 15 calls per minute. Each normal run spends 2 of those calls, so by the third C2 query about 14 calls had been made in under a minute, and that run slept until the window freed up. Three of the slow runs made exactly 2 model calls, so they were waiting, not retrying.
+2. **The log can't say why a run was slow.** The 61284 ms run made 3 model calls instead of 2, so one call was retried. Trial 3's `black boots under $60` also made 3 calls in C5. But the log line holds only `duration_ms` and `model_calls`. The retry reason (rate limit or 5xx) and the time spent sleeping go only to stderr, from `generate.generate`, and the runner discards stderr. From the log alone, "the model was slow", "it waited for the pacing window" and "the service pushed back and it retried" all look the same. That's a gap in the instrumentation this capstone is supposed to provide.
+
+*Least demanding criterion.* **C1.** Validation is a fixed rule that runs before the agent, and `test_failure_handling.py` already covered the same five bodies, so it was close to certain to pass. Next time I'd widen it rather than raise a rate: for example, "10 of 10 malformed requests", adding a query over 1,000 characters, a non-object `wardrobe`, and a wrong `Content-Type`. Those are cases I haven't verified the server handles. The target I'd tighten is **C5**: "5 of 5 matching queries under 10 s, *measured at a rate of 10 requests per minute*" instead of from a fresh minute. Point 1 above shows that the current wording lets the test order decide the result.
