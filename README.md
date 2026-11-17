@@ -1886,3 +1886,24 @@ above was repeated on the final code.
 ---
 
 📖 **How to run this project: [RUNNING.md](RUNNING.md)**
+
+---
+
+## Capstone
+
+**What This Extends**
+
+This extends FitFindr, the Unit 3/4 thrift-shopping agent. The existing system parses a plain-language request (`agent.parse_query`), searches 40 listings over MCP (`search_listings` in `mcp_server.py`), runs a price check, then makes two model calls (`suggest_outfit`, `create_fit_card`) to return an outfit and a fit card. It already stopped early on an empty search, retried an empty sized search without the size, and retried temporary 5xx/rate-limit errors inside `generate.py`. Unit 9 added `serve.py` (Flask, `POST /ask`) and the start of a JSON Lines run log.
+
+What is new in the capstone is a failure-handling layer around that request path. Before this work, a malformed body such as `{"query": 123}` or `["a"]` returned Flask's HTML 500 page and left no log record. An MCP failure, a quota guard or an exhausted rate-limit retry escaped the agent as an uncaught exception. And a search that found nothing was logged as `"status": "ok"`, the same as a real success.
+
+**The Shape**
+
+Shape B — Harden against failure.
+
+The extension is one layer: every `/ask` request ends in a controlled JSON response with a defined status code, never an HTML 500 or an unrecorded crash. Each response and log record carries a `stage` (where the run stopped) and an `error_type` (`validation_error`, `no_results`, `tool_error`, `model_error`, `internal_error`). Malformed input is rejected with a 400 at the request boundary, before the agent runs. A tool (MCP) or model failure inside the agent is caught and returned with the stage it happened at. "Found nothing" is recorded as `no_results` and kept separate from a system error. The one distinctive addition is a `request_id` that is returned to the caller and written to the log, so a reported failure can be matched to its exact log line.
+
+Out of scope:
+- Changing how FitFindr recommends anything: the search matching, the prompts, the outfit and fit-card wording all stay as they were.
+- New retry or timeout logic for the model. `generate.py` already retries 5xx and rate limits, and I'm not rebuilding that.
+- Hosting, a UI, or concurrency. `serve.py` still runs one request at a time, locally (Path B).
