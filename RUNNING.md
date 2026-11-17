@@ -272,7 +272,7 @@ and the first `/ask` returned 200 with a fit card.
 | Thing | Value |
 |---|---|
 | Python | 3.11, 3.12 or 3.13 (tested on 3.12.3). **Not 3.14** |
-| Dependencies | `requirements.txt` — pinned with lower and upper bounds. Resolved in the tested install to Flask 3.1.3, Werkzeug 3.1.9, google-genai 1.75.0, mcp 1.30.0, python-dotenv 1.1.1, gunicorn 23.0.0 |
+| Dependencies | **`requirements-lock.txt`** — every package pinned to an exact version (`==`), frozen from the tested fresh-clone install; a second fresh install from it reproduced the identical 48 versions and passed all tests. Direct dependencies: Flask 3.1.3, Werkzeug 3.1.9, google-genai 1.75.0, mcp 1.30.0, python-dotenv 1.1.1, gunicorn 23.0.0. `requirements.txt` keeps the course starter's bounded ranges |
 | Environment variable | `GEMINI_API_KEY` (required) — put it in `.env`, which git ignores. Never commit it |
 | Optional variables | `PORT` (default 5000), `AI201_CACHE=0` to turn off the response cache, `AI201_MODEL` (default `gemini-3.5-flash-lite`) |
 | Model files | None. The model is called over the Gemini API; nothing is downloaded |
@@ -285,7 +285,7 @@ and the first `/ask` returned 200 with a fit card.
 git clone <this repo's URL> fitfindr && cd fitfindr
 python3 -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+pip install -r requirements-lock.txt   # exact versions (or requirements.txt for the ranges)
 cp .env.example .env               # then set GEMINI_API_KEY=... in .env
 python test.py                     # optional: checks Python, packages, key and one model call
 ```
